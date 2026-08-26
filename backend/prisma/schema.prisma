@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  AGENT
+  WORKER
+}
+
+enum EventStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
+enum ApplicationStatus {
+  APPLIED
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  phone     String   @unique
+  role      Role
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workerProfile WorkerProfile?
+  agentProfile  AgentProfile?
+  eventsCreated Event[]        @relation("AgentEvents")
+  applications  Application[]  @relation("WorkerApplications")
+
+  @@map("users")
+}
+
+model WorkerProfile {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  age             Int
+  contactPhone    String
+  profilePhotoKey String?
+  idProofKey      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("worker_profiles")
+}
+
+model AgentProfile {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agencyName         String
+  businessLicense    String
+  contactEmail       String
+  officeAddress      String
+  verificationStatus String   @default("VERIFIED")
+  licenseDocKey      String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("agent_profiles")
+}
+
+model Event {
+  id            String      @id @default(uuid())
+  agentId       String
+  agent         User        @relation("AgentEvents", fields: [agentId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  location      String
+  date          DateTime
+  startTime     String
+  endTime       String
+  workersNeeded Int
+  payPerWorker  Decimal     @db.Decimal(10, 2)
+  status        EventStatus @default(OPEN)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  applications Application[]
+
+  @@map("events")
+}
+
+model Application {
+  id        String            @id @default(uuid())
+  eventId   String
+  event     Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  workerId  String
+  worker    User              @relation("WorkerApplications", fields: [workerId], references: [id], onDelete: Cascade)
+  status    ApplicationStatus @default(APPLIED)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@unique([eventId, workerId])
+  @@map("applications")
+}
