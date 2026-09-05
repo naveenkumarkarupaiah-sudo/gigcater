@@ -305,21 +305,28 @@ export const WorkerProfileScreen: React.FC<WorkerProfileScreenProps> = ({ userId
                     Profile / Face Photo *
                   </label>
                 </div>
-                {profilePhotoKey && (
-                  <div className="mb-2.5 space-y-1.5">
+                <div className="mb-2.5 space-y-1.5">
+                  {profilePhotoKey ? (
                     <img
                       src={resolveUploadedFileUrl(profilePhotoKey)!}
                       alt="Profile preview"
                       className="w-20 h-20 rounded-xl object-cover border-2 border-emerald-300 shadow-sm"
                     />
+                  ) : (
+                    <div className="w-20 h-20 rounded-xl bg-slate-100 border-2 border-dashed border-slate-300 flex items-center justify-center">
+                      <Camera className="w-7 h-7 text-slate-400" />
+                    </div>
+                  )}
+                  {profilePhotoKey && (
                     <div className="text-[11px] text-emerald-800 font-bold flex items-center gap-1">
                       <CheckCircle className="w-3.5 h-3.5" /> Photo uploaded & confirmed
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
                 <input
                   type="file"
                   accept="image/*"
+                  capture="user"
                   onChange={(e) => handleFileUpload(e, 'profilePhoto')}
                   className="text-xs text-slate-600 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-emerald-100 file:text-emerald-800 hover:file:bg-emerald-200 cursor-pointer"
                   disabled={photoUploading}
@@ -352,6 +359,7 @@ export const WorkerProfileScreen: React.FC<WorkerProfileScreenProps> = ({ userId
                 <input
                   type="file"
                   accept="image/*,.pdf"
+                  capture="environment"
                   onChange={(e) => handleFileUpload(e, 'idProof')}
                   className="text-xs text-slate-600 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-teal-100 file:text-teal-800 hover:file:bg-teal-200 cursor-pointer"
                   disabled={idUploading}

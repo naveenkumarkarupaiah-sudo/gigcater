@@ -82,8 +82,16 @@ export const AgentDashboard: React.FC<AgentDashboardProps> = ({ activeTab, setAc
     },
   ];
 
-  // Quick-pick chip values to speed up filling the pay rate field
-  const payRateChips = ['120', '150', '180', '200', '250'];
+  // Quick-pick chip values to speed up filling the pay rate field — real gigs typically start near ₹350
+  const payRateChips = ['350', '400', '450', '500', '600'];
+
+  // Tiered step size for the Pay/Worker +/- stepper: ₹10 for the first 5 presses,
+  // ₹20 for the next 5, then ₹50 per press after that — a flat ₹0.01 native step is useless here.
+  const getPayStepSize = (pressNumber: number): number => {
+    if (pressNumber <= 5) return 10;
+    if (pressNumber <= 10) return 20;
+    return 50;
+  };
 
   // New Event Form State — starts empty; presets or manual entry fill it in
   const [title, setTitle] = useState('');
@@ -95,6 +103,20 @@ export const AgentDashboard: React.FC<AgentDashboardProps> = ({ activeTab, setAc
   const [endTime, setEndTime] = useState('');
   const [workersNeeded, setWorkersNeeded] = useState('');
   const [payPerWorker, setPayPerWorker] = useState('');
+  const [payStepCount, setPayStepCount] = useState(0);
+
+  const handlePayIncrement = () => {
+    const nextCount = payStepCount + 1;
+    const step = getPayStepSize(nextCount);
+    setPayStepCount(nextCount);
+    setPayPerWorker(String((parseFloat(payPerWorker) || 0) + step));
+  };
+
+  const handlePayDecrement = () => {
+    const step = getPayStepSize(Math.max(1, payStepCount));
+    setPayStepCount(Math.max(0, payStepCount - 1));
+    setPayPerWorker(String(Math.max(0, (parseFloat(payPerWorker) || 0) - step)));
+  };
 
   const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -533,14 +555,29 @@ export const AgentDashboard: React.FC<AgentDashboardProps> = ({ activeTab, setAc
 
                 <div>
                   <label className="block font-bold text-slate-700 mb-1.5">Pay / Worker (₹) *</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={payPerWorker}
-                    onChange={(e) => setPayPerWorker(e.target.value)}
-                    required
-                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center font-bold"
-                  />
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handlePayDecrement}
+                      className="w-8 h-[42px] shrink-0 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-lg transition"
+                    >
+                      −
+                    </button>
+                    <input
+                      type="number"
+                      value={payPerWorker}
+                      onChange={(e) => setPayPerWorker(e.target.value)}
+                      required
+                      className="w-full px-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center font-bold"
+                    />
+                    <button
+                      type="button"
+                      onClick={handlePayIncrement}
+                      className="w-8 h-[42px] shrink-0 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-lg transition"
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
               </div>
 

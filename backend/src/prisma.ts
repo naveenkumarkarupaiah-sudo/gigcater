@@ -14,9 +14,10 @@ export const memoryDb = {
       userId: 'agent-demo-id',
       name: 'Robert Vance',
       phone: '+1 555-0199',
-      photos: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=150',
+      // No pre-loaded photo/proof doc — these must come from a real upload, never a stock placeholder.
+      photos: null,
       whatsappNumber: '+1 555-0199',
-      originalProofDoc: 'PROOF-ORIGINAL-VISA-80162.pdf',
+      originalProofDoc: null,
       verificationStatus: 'VERIFIED',
       createdAt: new Date(),
       updatedAt: new Date(),

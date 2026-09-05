@@ -78,17 +78,22 @@ router.post('/', authenticate, requireRole(['WORKER']), async (req: AuthRequest,
     } else {
       let existingIndex = memoryDb.workerProfiles.findIndex(p => p.userId === req.user!.id);
       if (existingIndex >= 0) {
-        memoryDb.workerProfiles[existingIndex] = {
-          ...memoryDb.workerProfiles[existingIndex],
+        // Mutate the existing object in place (never replace it) — applications created earlier
+        // hold a direct reference to this same object as `application.worker.workerProfile`.
+        // Replacing the array entry would silently detach those references, leaving old
+        // applications (e.g. in an agent's Incoming Requests list) stuck showing stale/missing
+        // photos forever after the worker updates their profile.
+        const existing = memoryDb.workerProfiles[existingIndex];
+        Object.assign(existing, {
           name: name.trim(),
           age: parsedAge,
           contactPhone: contactPhone.trim(),
-          profilePhotoKey: profilePhotoKey || memoryDb.workerProfiles[existingIndex].profilePhotoKey,
-          idProofKey: idProofKey || memoryDb.workerProfiles[existingIndex].idProofKey,
+          profilePhotoKey: profilePhotoKey || existing.profilePhotoKey,
+          idProofKey: idProofKey || existing.idProofKey,
           gpayNumber: String(gpayNumber).trim(),
           updatedAt: new Date(),
-        };
-        profile = memoryDb.workerProfiles[existingIndex];
+        });
+        profile = existing;
       } else {
         profile = {
           id: `prof_${Date.now()}`,
@@ -179,17 +184,18 @@ router.post('/agent', authenticate, requireRole(['AGENT']), async (req: AuthRequ
     } else {
       let existingIndex = memoryDb.agentProfiles.findIndex(p => p.userId === req.user!.id);
       if (existingIndex >= 0) {
-        memoryDb.agentProfiles[existingIndex] = {
-          ...memoryDb.agentProfiles[existingIndex],
+        // Mutate in place — see the matching comment in the worker-profile branch above for why.
+        const existing = memoryDb.agentProfiles[existingIndex];
+        Object.assign(existing, {
           name: name.trim(),
           phone: phone.trim(),
-          photos: photos || memoryDb.agentProfiles[existingIndex].photos,
+          photos: photos || existing.photos,
           whatsappNumber: whatsappNumber.trim(),
-          originalProofDoc: originalProofDoc || memoryDb.agentProfiles[existingIndex].originalProofDoc,
+          originalProofDoc: originalProofDoc || existing.originalProofDoc,
           verificationStatus: 'VERIFIED',
           updatedAt: new Date(),
-        };
-        profile = memoryDb.agentProfiles[existingIndex];
+        });
+        profile = existing;
       } else {
         profile = {
           id: `ag_prof_${Date.now()}`,

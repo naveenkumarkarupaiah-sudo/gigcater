@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { api, setAuthToken, User } from '../api';
-import { Utensils, ShieldCheck, UserCheck, Clock, DollarSign, Award, ArrowRight, ShieldAlert } from 'lucide-react';
+import { Utensils, ShieldCheck, UserCheck, Clock, DollarSign, Award, ArrowRight, ShieldAlert, Percent } from 'lucide-react';
 
 interface AuthScreenProps {
   onSuccess: (user: User) => void;
@@ -82,6 +82,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess }) => {
         {/* Right Side: Quick Auth Card */}
         <div className="md:col-span-6">
           <div className="bg-white border border-slate-200/80 rounded-3xl p-8 shadow-xl shadow-emerald-900/5 backdrop-blur-md">
+            {/* Core value proposition — always the first thing anyone sees on login */}
+            <div className="mb-6 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-2xl px-4 py-3.5 shadow-lg shadow-emerald-600/25 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
+                <Percent className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-sm font-black tracking-tight leading-tight">0% Commission — No Commission Ever</div>
+                <p className="text-[11px] text-emerald-50 font-semibold mt-0.5">Workers keep 100% of their pay. Agents keep 100% of their margin.</p>
+              </div>
+            </div>
+
             <div className="text-center mb-8">
               <div className="w-14 h-14 mx-auto rounded-2xl green-gradient-bg flex items-center justify-center text-white shadow-lg shadow-emerald-600/25 mb-3 animate-bounce">
                 <Utensils className="w-7 h-7" />
