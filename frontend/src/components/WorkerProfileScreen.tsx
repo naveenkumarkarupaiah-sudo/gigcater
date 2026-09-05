@@ -1,17 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { api, WorkerProfile } from '../api';
-import { UserCheck, ShieldCheck, UploadCloud, CheckCircle, FileText, Camera, Award, Sparkles, Phone, User, Calendar } from 'lucide-react';
+import { resolveUploadedFileUrl } from '../mediaUrl';
+import { UserCheck, ShieldCheck, UploadCloud, CheckCircle, FileText, Camera, Award, Sparkles, Phone, User, Calendar, Wallet } from 'lucide-react';
 
 interface WorkerProfileScreenProps {
+  userId: string;
   onProfileUpdated?: (profile: WorkerProfile) => void;
 }
 
-export const WorkerProfileScreen: React.FC<WorkerProfileScreenProps> = ({ onProfileUpdated }) => {
+export const WorkerProfileScreen: React.FC<WorkerProfileScreenProps> = ({ userId, onProfileUpdated }) => {
   const [name, setName] = useState('');
   const [age, setAge] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [profilePhotoKey, setProfilePhotoKey] = useState<string | null>(null);
   const [idProofKey, setIdProofKey] = useState<string | null>(null);
+  const [gpayNumber, setGpayNumber] = useState('');
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -20,6 +23,20 @@ export const WorkerProfileScreen: React.FC<WorkerProfileScreenProps> = ({ onProf
 
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [idProofViewLoading, setIdProofViewLoading] = useState(false);
+
+  const handleViewIdProof = async () => {
+    setIdProofViewLoading(true);
+    setError(null);
+    try {
+      const blobUrl = await api.getIdProofBlobUrl('worker', userId);
+      window.open(blobUrl, '_blank', 'noopener,noreferrer');
+    } catch (err: any) {
+      setError(err.message || 'Failed to load ID proof document.');
+    } finally {
+      setIdProofViewLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadProfile();
@@ -35,6 +52,7 @@ export const WorkerProfileScreen: React.FC<WorkerProfileScreenProps> = ({ onProf
         setContactPhone(res.profile.contactPhone || '');
         setProfilePhotoKey(res.profile.profilePhotoKey || null);
         setIdProofKey(res.profile.idProofKey || null);
+        setGpayNumber(res.profile.gpayNumber || '');
       }
     } catch (err: any) {
       // Profile does not exist yet for new worker
@@ -44,12 +62,9 @@ export const WorkerProfileScreen: React.FC<WorkerProfileScreenProps> = ({ onProf
   };
 
   const calculateCompletion = () => {
-    let score = 0;
-    if (name) score += 25;
-    if (age) score += 25;
-    if (contactPhone) score += 25;
-    if (profilePhotoKey || idProofKey) score += 25;
-    return score;
+    const fields = [name, age, contactPhone, profilePhotoKey, idProofKey, gpayNumber];
+    const filled = fields.filter(Boolean).length;
+    return Math.round((filled / fields.length) * 100);
   };
 
   const handleFileUpload = async (
@@ -91,6 +106,16 @@ export const WorkerProfileScreen: React.FC<WorkerProfileScreenProps> = ({ onProf
       return;
     }
 
+    if (!profilePhotoKey || !idProofKey) {
+      setError('Please upload and confirm both your Profile Photo and ID Proof before saving — these are required to apply for gigs.');
+      return;
+    }
+
+    if (!gpayNumber.trim()) {
+      setError('Please add your UPI/GPay number so agents can pay you for completed gigs.');
+      return;
+    }
+
     setSaving(true);
     try {
       const res = await api.saveProfile({
@@ -99,6 +124,7 @@ export const WorkerProfileScreen: React.FC<WorkerProfileScreenProps> = ({ onProf
         contactPhone,
         profilePhotoKey,
         idProofKey,
+        gpayNumber: gpayNumber.trim(),
       });
       setSuccessMsg('Worker Profile saved successfully.');
       if (onProfileUpdated) onProfileUpdated(res.profile);
@@ -142,6 +168,29 @@ export const WorkerProfileScreen: React.FC<WorkerProfileScreenProps> = ({ onProf
               ></div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Earned Badges Showcase */}
+      <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-3xl p-6 shadow-md flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center text-2xl shadow-lg shrink-0">
+            🏅
+          </div>
+          <div>
+            <h3 className="text-sm font-extrabold text-amber-950 flex items-center gap-1.5">
+              Verified Event Completion Badges
+              <Sparkles className="w-4 h-4 text-amber-600" />
+            </h3>
+            <p className="text-xs text-amber-800 font-medium mt-0.5">
+              You automatically earn a Star Completion Badge for every completed catering gig!
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-white border border-amber-300 px-4 py-2 rounded-2xl text-center shrink-0 shadow-xs">
+          <div className="text-[10px] uppercase font-bold text-amber-800">Catering Badges</div>
+          <div className="text-lg font-black text-amber-900">🏅 Active</div>
         </div>
       </div>
 
@@ -225,61 +274,107 @@ export const WorkerProfileScreen: React.FC<WorkerProfileScreenProps> = ({ onProf
             </div>
           </div>
 
-          {/* S3 File Upload Cards */}
-          <div className="border-t border-slate-100 pt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-4 hover:border-emerald-200 transition">
-              <div className="flex items-center gap-2 mb-2">
-                <Camera className="w-4 h-4 text-emerald-600" />
-                <label className="text-xs font-bold text-slate-800">
-                  Profile Photo Upload
-                </label>
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">UPI / GPay Number *</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                <Wallet className="w-4 h-4" />
               </div>
-              {profilePhotoKey && (
-                <div className="text-[11px] text-emerald-800 font-mono bg-emerald-50 p-2 rounded-xl border border-emerald-200 mb-2.5 truncate font-semibold">
-                  Uploaded: {profilePhotoKey}
-                </div>
-              )}
               <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => handleFileUpload(e, 'profilePhoto')}
-                className="text-xs text-slate-600 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-emerald-100 file:text-emerald-800 hover:file:bg-emerald-200 cursor-pointer"
-                disabled={photoUploading}
+                type="tel"
+                placeholder="e.g. 9876543210@okaxis or your GPay-linked number"
+                value={gpayNumber}
+                onChange={(e) => setGpayNumber(e.target.value)}
+                required
+                className="w-full pl-10 pr-4 py-3 text-sm bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:bg-white focus:border-emerald-500 font-semibold"
               />
-              {photoUploading && <p className="text-[11px] text-teal-600 mt-1 font-semibold">Uploading photo to S3 storage...</p>}
             </div>
+            <p className="text-[11px] text-slate-500 font-medium mt-1">Agents pay you directly to this UPI/GPay number after a completed gig.</p>
+          </div>
 
-            <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-4 hover:border-emerald-200 transition">
-              <div className="flex items-center gap-2 mb-2">
-                <FileText className="w-4 h-4 text-teal-600" />
-                <label className="text-xs font-bold text-slate-800">
-                  ID / Verification Doc
-                </label>
-              </div>
-              {idProofKey && (
-                <div className="text-[11px] text-emerald-800 font-mono bg-emerald-50 p-2 rounded-xl border border-emerald-200 mb-2.5 truncate font-semibold">
-                  Uploaded: {idProofKey}
+          {/* S3 File Upload Cards */}
+          <div className="border-t border-slate-100 pt-5">
+            <p className="text-xs text-slate-500 font-medium mb-3">
+              Both uploads below are <strong className="text-slate-700">required</strong> — agents must be able to see your face and verify your ID before accepting you for a gig.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-4 hover:border-emerald-200 transition">
+                <div className="flex items-center gap-2 mb-2">
+                  <Camera className="w-4 h-4 text-emerald-600" />
+                  <label className="text-xs font-bold text-slate-800">
+                    Profile / Face Photo *
+                  </label>
                 </div>
-              )}
-              <input
-                type="file"
-                accept="image/*,.pdf"
-                onChange={(e) => handleFileUpload(e, 'idProof')}
-                className="text-xs text-slate-600 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-teal-100 file:text-teal-800 hover:file:bg-teal-200 cursor-pointer"
-                disabled={idUploading}
-              />
-              {idUploading && <p className="text-[11px] text-teal-600 mt-1 font-semibold">Uploading document to S3 storage...</p>}
+                {profilePhotoKey && (
+                  <div className="mb-2.5 space-y-1.5">
+                    <img
+                      src={resolveUploadedFileUrl(profilePhotoKey)!}
+                      alt="Profile preview"
+                      className="w-20 h-20 rounded-xl object-cover border-2 border-emerald-300 shadow-sm"
+                    />
+                    <div className="text-[11px] text-emerald-800 font-bold flex items-center gap-1">
+                      <CheckCircle className="w-3.5 h-3.5" /> Photo uploaded & confirmed
+                    </div>
+                  </div>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleFileUpload(e, 'profilePhoto')}
+                  className="text-xs text-slate-600 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-emerald-100 file:text-emerald-800 hover:file:bg-emerald-200 cursor-pointer"
+                  disabled={photoUploading}
+                />
+                {photoUploading && <p className="text-[11px] text-teal-600 mt-1 font-semibold">Uploading photo...</p>}
+              </div>
+
+              <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-4 hover:border-emerald-200 transition">
+                <div className="flex items-center gap-2 mb-2">
+                  <FileText className="w-4 h-4 text-teal-600" />
+                  <label className="text-xs font-bold text-slate-800">
+                    ID / Verification Doc *
+                  </label>
+                </div>
+                {idProofKey && (
+                  <div className="mb-2.5 space-y-1.5">
+                    <button
+                      type="button"
+                      onClick={handleViewIdProof}
+                      disabled={idProofViewLoading}
+                      className="inline-block text-[11px] text-teal-700 font-bold underline underline-offset-2 disabled:opacity-50"
+                    >
+                      {idProofViewLoading ? 'Loading…' : 'View uploaded document →'}
+                    </button>
+                    <div className="text-[11px] text-emerald-800 font-bold flex items-center gap-1">
+                      <CheckCircle className="w-3.5 h-3.5" /> Document uploaded & confirmed
+                    </div>
+                  </div>
+                )}
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={(e) => handleFileUpload(e, 'idProof')}
+                  className="text-xs text-slate-600 file:mr-3 file:py-2 file:px-3.5 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-teal-100 file:text-teal-800 hover:file:bg-teal-200 cursor-pointer"
+                  disabled={idUploading}
+                />
+                {idUploading && <p className="text-[11px] text-teal-600 mt-1 font-semibold">Uploading document...</p>}
+              </div>
             </div>
           </div>
 
           <div className="pt-3">
             <button
               type="submit"
-              disabled={saving}
-              className="green-gradient-bg hover:opacity-95 text-white font-extrabold text-xs px-6 py-3.5 rounded-2xl transition shadow-lg shadow-emerald-600/25 disabled:opacity-50"
+              disabled={saving || photoUploading || idUploading || !profilePhotoKey || !idProofKey || !gpayNumber.trim()}
+              title={!profilePhotoKey || !idProofKey || !gpayNumber.trim() ? 'Upload your profile photo, ID proof, and add your UPI/GPay number to continue' : undefined}
+              className="green-gradient-bg hover:opacity-95 text-white font-extrabold text-xs px-6 py-3.5 rounded-2xl transition shadow-lg shadow-emerald-600/25 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? 'Saving Profile...' : 'Save & Update Profile'}
             </button>
+            {(!profilePhotoKey || !idProofKey || !gpayNumber.trim()) && (
+              <p className="text-[11px] text-slate-500 font-semibold mt-2">
+                Upload your profile photo, ID proof, and add your UPI/GPay number above to enable saving.
+              </p>
+            )}
           </div>
         </form>
       </div>

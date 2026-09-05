@@ -10,6 +10,7 @@ datasource db {
 enum Role {
   AGENT
   WORKER
+  ADMIN
 }
 
 enum EventStatus {
@@ -23,6 +24,18 @@ enum ApplicationStatus {
   APPROVED
   REJECTED
   COMPLETED
+  PAID
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+}
+
+enum ComplaintStatus {
+  PENDING
+  RESOLVED_GENUINE
+  RESOLVED_INVALID
 }
 
 model User {
@@ -49,6 +62,7 @@ model WorkerProfile {
   contactPhone    String
   profilePhotoKey String?
   idProofKey      String?
+  gpayNumber      String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -59,12 +73,12 @@ model AgentProfile {
   id                 String   @id @default(uuid())
   userId             String   @unique
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  agencyName         String
-  businessLicense    String
-  contactEmail       String
-  officeAddress      String
+  name               String
+  phone              String
+  photos             String?
+  whatsappNumber     String
+  originalProofDoc   String?
   verificationStatus String   @default("VERIFIED")
-  licenseDocKey      String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -76,6 +90,7 @@ model Event {
   agentId       String
   agent         User        @relation("AgentEvents", fields: [agentId], references: [id], onDelete: Cascade)
   title         String
+  category      String?
   description   String?
   location      String
   date          DateTime
@@ -93,15 +108,57 @@ model Event {
 }
 
 model Application {
-  id        String            @id @default(uuid())
-  eventId   String
-  event     Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  workerId  String
-  worker    User              @relation("WorkerApplications", fields: [workerId], references: [id], onDelete: Cascade)
-  status    ApplicationStatus @default(APPLIED)
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  id                  String            @id @default(uuid())
+  eventId             String
+  event               Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  workerId            String
+  worker              User              @relation("WorkerApplications", fields: [workerId], references: [id], onDelete: Cascade)
+  status              ApplicationStatus @default(APPLIED)
+  groupSize           Int               @default(1)
+  additionalWorkers   String?
+  rating              Int?
+  attendanceConfirmed Boolean           @default(false)
+  
+  // Geotagged Check-In Logs
+  checkInPhoto        String?
+  checkInLat          Float?
+  checkInLng          Float?
+  checkInTime         DateTime?
+
+  // Geotagged Check-Out Logs
+  checkOutPhoto       String?
+  checkOutLat         Float?
+  checkOutLng         Float?
+  checkOutTime        DateTime?
+
+  // Payment Lifecycle — starts once the worker uploads the Out-Time (check-out) photo
+  paymentStatus       PaymentStatus?
+  paymentDueAt        DateTime?
+  paymentPaidAt       DateTime?
+  paymentReference    String?
+  paymentProofKey     String?
+
+  complaints          Complaint[]
+
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
 
   @@unique([eventId, workerId])
   @@map("applications")
+}
+
+model Complaint {
+  id            String          @id @default(uuid())
+  applicationId String
+  application   Application     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  workerId      String
+  agentId       String
+  reason        String
+  status        ComplaintStatus @default(PENDING)
+  adminNotes    String?
+  resolvedAt    DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@map("complaints")
 }

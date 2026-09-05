@@ -105,16 +105,52 @@ router.get('/:id', auth_1.authenticate, async (req, res) => {
 // POST /api/events
 router.post('/', auth_1.authenticate, (0, auth_1.requireRole)(['AGENT']), async (req, res) => {
     try {
-        const { title, description, location, date, startTime, endTime, workersNeeded, payPerWorker } = req.body;
+        const { title, category, description, location, date, startTime, endTime, workersNeeded, payPerWorker } = req.body;
         if (!title || !location || !date || !startTime || !endTime || !workersNeeded || !payPerWorker) {
             return res.status(400).json({ error: 'All event details are required.' });
         }
+        // Ensure Agent Profile exists (auto-create if missing so event creation never fails)
+        let agentProfile;
+        if (prisma_1.isDbConnected) {
+            agentProfile = await prisma_1.prisma.agentProfile.findUnique({
+                where: { userId: req.user.id },
+            });
+            if (!agentProfile) {
+                agentProfile = await prisma_1.prisma.agentProfile.create({
+                    data: {
+                        userId: req.user.id,
+                        name: `Agent (${req.user.phone.slice(-4)})`,
+                        phone: req.user.phone,
+                        whatsappNumber: req.user.phone,
+                        verificationStatus: 'VERIFIED',
+                    },
+                });
+            }
+        }
+        else {
+            agentProfile = prisma_1.memoryDb.agentProfiles.find(p => p.userId === req.user.id);
+            if (!agentProfile) {
+                agentProfile = {
+                    id: `ag_prof_${Date.now()}`,
+                    userId: req.user.id,
+                    name: `Agent (${req.user.phone.slice(-4)})`,
+                    phone: req.user.phone,
+                    whatsappNumber: req.user.phone,
+                    verificationStatus: 'VERIFIED',
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                };
+                prisma_1.memoryDb.agentProfiles.push(agentProfile);
+            }
+        }
+        const categoryName = category && typeof category === 'string' && category.trim() !== '' ? category.trim() : 'Banquet Serving';
         let event;
         if (prisma_1.isDbConnected) {
             event = await prisma_1.prisma.event.create({
                 data: {
                     agentId: req.user.id,
                     title: title.trim(),
+                    category: categoryName,
                     description: description ? description.trim() : '',
                     location: location.trim(),
                     date: new Date(date),
@@ -131,6 +167,7 @@ router.post('/', auth_1.authenticate, (0, auth_1.requireRole)(['AGENT']), async 
                 id: `evt_${Date.now()}`,
                 agentId: req.user.id,
                 title: title.trim(),
+                category: categoryName,
                 description: description ? description.trim() : '',
                 location: location.trim(),
                 date: new Date(date),
@@ -151,6 +188,37 @@ router.post('/', auth_1.authenticate, (0, auth_1.requireRole)(['AGENT']), async 
     }
     catch (error) {
         return res.status(500).json({ error: 'Failed to create event.' });
+    }
+});
+// DELETE /api/events/:id - Agent deletes their posted event
+router.delete('/:id', auth_1.authenticate, (0, auth_1.requireRole)(['AGENT']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (prisma_1.isDbConnected) {
+            const existingEvent = await prisma_1.prisma.event.findUnique({ where: { id } });
+            if (!existingEvent)
+                return res.status(404).json({ error: 'Event not found.' });
+            if (existingEvent.agentId !== req.user.id) {
+                return res.status(403).json({ error: 'Forbidden: You can only delete your own posted events.' });
+            }
+            await prisma_1.prisma.event.delete({ where: { id } });
+        }
+        else {
+            const index = prisma_1.memoryDb.events.findIndex(e => e.id === id);
+            if (index === -1)
+                return res.status(404).json({ error: 'Event not found.' });
+            const evt = prisma_1.memoryDb.events[index];
+            if (evt.agentId !== req.user.id && evt.agentId !== 'agent-demo-id') {
+                return res.status(403).json({ error: 'Forbidden: You can only delete your own posted events.' });
+            }
+            prisma_1.memoryDb.events.splice(index, 1);
+            prisma_1.memoryDb.applications = prisma_1.memoryDb.applications.filter(a => a.eventId !== id);
+        }
+        return res.json({ message: 'Event deleted successfully.' });
+    }
+    catch (error) {
+        console.error('Error deleting event:', error);
+        return res.status(500).json({ error: error.message || 'Failed to delete event.' });
     }
 });
 // PATCH /api/events/:id/status

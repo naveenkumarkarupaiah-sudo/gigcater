@@ -5,6 +5,7 @@ import { WorkerDashboard } from './components/WorkerDashboard';
 import { AgentDashboard } from './components/AgentDashboard';
 import { WorkerProfileScreen } from './components/WorkerProfileScreen';
 import { AgentProfileScreen } from './components/AgentProfileScreen';
+import { AdminDashboard } from './components/AdminDashboard';
 import { api, getAuthToken, removeAuthToken, User } from './api';
 
 export const App: React.FC = () => {
@@ -28,6 +29,8 @@ export const App: React.FC = () => {
       setUser(res.user);
       if (res.user.role === 'AGENT') {
         setActiveTab('my-events');
+      } else if (res.user.role === 'ADMIN') {
+        setActiveTab('complaints');
       } else {
         setActiveTab('browse');
       }
@@ -43,6 +46,8 @@ export const App: React.FC = () => {
     setUser(loggedUser);
     if (loggedUser.role === 'AGENT') {
       setActiveTab('my-events');
+    } else if (loggedUser.role === 'ADMIN') {
+      setActiveTab('complaints');
     } else {
       setActiveTab('browse');
     }
@@ -73,9 +78,12 @@ export const App: React.FC = () => {
       <main className="flex-1">
         {!user ? (
           <AuthScreen onSuccess={handleAuthSuccess} />
+        ) : user.role === 'ADMIN' ? (
+          <AdminDashboard />
         ) : user.role === 'WORKER' ? (
           activeTab === 'profile' ? (
             <WorkerProfileScreen
+              userId={user.id}
               onProfileUpdated={() => {
                 setUser({ ...user, hasProfile: true });
                 setActiveTab('browse');

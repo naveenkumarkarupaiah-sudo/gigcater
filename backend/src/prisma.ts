@@ -12,10 +12,11 @@ export const memoryDb = {
     {
       id: 'agent-demo-prof-1',
       userId: 'agent-demo-id',
-      agencyName: 'Royal Gourmet Catering Services',
-      businessLicense: 'LIC-984210-BD',
-      contactEmail: 'contact@royalgourmet.com',
-      officeAddress: 'House 42, Road 11, Banani, Dhaka',
+      name: 'Robert Vance',
+      phone: '+1 555-0199',
+      photos: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=150',
+      whatsappNumber: '+1 555-0199',
+      originalProofDoc: 'PROOF-ORIGINAL-VISA-80162.pdf',
       verificationStatus: 'VERIFIED',
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -81,9 +82,13 @@ export const memoryDb = {
     }
   ] as any[],
   applications: [] as any[],
+  complaints: [] as any[],
 };
 
+import { initializeFirebaseDatabase } from './firebase';
+
 export async function checkDatabaseConnection() {
+  initializeFirebaseDatabase();
   try {
     await prisma.$connect();
     await prisma.$queryRaw`SELECT 1`;
@@ -92,6 +97,6 @@ export async function checkDatabaseConnection() {
   } catch (error) {
     isDbConnected = false;
     console.warn('⚠️ Could not connect to PostgreSQL database on localhost:5432.');
-    console.warn('ℹ️ Fallback in-memory database enabled for seamless local dev & instant testing.');
+    console.warn('ℹ️ Firebase Project "gigcater-72cc4" database & fallback in-memory database enabled for seamless local dev & instant testing.');
   }
 }

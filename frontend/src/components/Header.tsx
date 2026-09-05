@@ -1,6 +1,6 @@
 import React from 'react';
 import { User } from '../api';
-import { Utensils, Calendar, UserCheck, PlusCircle, LogOut, Sparkles, Building } from 'lucide-react';
+import { Utensils, Calendar, UserCheck, PlusCircle, LogOut, Sparkles, Building, ShieldAlert } from 'lucide-react';
 
 interface HeaderProps {
   user: User | null;
@@ -18,7 +18,7 @@ export const Header: React.FC<HeaderProps> = ({ user, onLogout, activeTab, setAc
           <div className="flex items-center space-x-6">
             <div 
               className="flex items-center space-x-3 cursor-pointer group" 
-              onClick={() => setActiveTab && setActiveTab(user?.role === 'AGENT' ? 'my-events' : 'browse')}
+              onClick={() => setActiveTab && setActiveTab(user?.role === 'AGENT' ? 'my-events' : user?.role === 'ADMIN' ? 'complaints' : 'browse')}
             >
               <div className="w-10 h-10 rounded-2xl green-gradient-bg flex items-center justify-center text-white shadow-md shadow-emerald-500/25 group-hover:scale-105 transition-transform duration-200">
                 <Utensils className="w-5 h-5" />
@@ -37,7 +37,19 @@ export const Header: React.FC<HeaderProps> = ({ user, onLogout, activeTab, setAc
             {/* Navigation Tabs */}
             {user && setActiveTab && (
               <nav className="hidden md:flex space-x-1.5 ml-4 bg-slate-100/90 p-1.5 rounded-2xl border border-slate-200/80 shadow-inner">
-                {user.role === 'WORKER' ? (
+                {user.role === 'ADMIN' ? (
+                  <button
+                    onClick={() => setActiveTab('complaints')}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
+                      activeTab === 'complaints'
+                        ? 'bg-white text-emerald-700 shadow-sm border border-emerald-100 scale-100'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                    }`}
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5" />
+                    Payment Complaints
+                  </button>
+                ) : user.role === 'WORKER' ? (
                   <>
                     <button
                       onClick={() => setActiveTab('browse')}
@@ -105,8 +117,8 @@ export const Header: React.FC<HeaderProps> = ({ user, onLogout, activeTab, setAc
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
                       }`}
                     >
-                      <Building className="w-3.5 h-3.5" />
-                      Agency Profile
+                      <UserCheck className="w-3.5 h-3.5" />
+                      Agent Profile
                     </button>
                     <button
                       onClick={() => setActiveTab('create-event')}
@@ -130,7 +142,7 @@ export const Header: React.FC<HeaderProps> = ({ user, onLogout, activeTab, setAc
             <div className="flex items-center space-x-3 text-xs">
               <div className="flex items-center space-x-2.5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-2xl px-3.5 py-1.5 shadow-xs">
                 <div className="w-7 h-7 rounded-xl green-gradient-bg text-white font-black text-xs flex items-center justify-center shadow-xs">
-                  {user.role === 'AGENT' ? 'AG' : 'WK'}
+                  {user.role === 'AGENT' ? 'AG' : user.role === 'ADMIN' ? 'AD' : 'WK'}
                 </div>
                 <div className="text-left">
                   <div className="font-extrabold text-slate-900 text-[11px] leading-tight">{user.phone}</div>

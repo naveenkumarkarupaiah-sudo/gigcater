@@ -3,7 +3,7 @@ const API_BASE = '/api';
 export interface User {
   id: string;
   phone: string;
-  role: 'AGENT' | 'WORKER';
+  role: 'AGENT' | 'WORKER' | 'ADMIN';
   hasProfile?: boolean;
   workerProfile?: WorkerProfile | null;
   agentProfile?: AgentProfile | null;
@@ -17,6 +17,7 @@ export interface WorkerProfile {
   contactPhone: string;
   profilePhotoKey?: string | null;
   idProofKey?: string | null;
+  gpayNumber?: string | null;
   rating?: number;
   totalRatings?: number;
 }
@@ -24,12 +25,12 @@ export interface WorkerProfile {
 export interface AgentProfile {
   id: string;
   userId: string;
-  agencyName: string;
-  businessLicense: string;
-  contactEmail: string;
-  officeAddress: string;
+  name: string;
+  phone: string;
+  photos?: string | null;
+  whatsappNumber: string;
+  originalProofDoc?: string | null;
   verificationStatus: 'VERIFIED' | 'PENDING' | 'BLOCKED';
-  licenseDocKey?: string | null;
 }
 
 export interface EventItem {
@@ -51,13 +52,34 @@ export interface EventItem {
   _count?: { applications: number };
 }
 
+export interface AdditionalWorker {
+  name: string;
+  phone: string;
+  photoUrl?: string | null;
+}
+
 export interface ApplicationItem {
   id: string;
   eventId: string;
   workerId: string;
-  status: 'APPLIED' | 'APPROVED' | 'REJECTED' | 'COMPLETED';
+  status: 'APPLIED' | 'APPROVED' | 'REJECTED' | 'COMPLETED' | 'PAID';
+  groupSize?: number;
+  additionalWorkers?: AdditionalWorker[] | string | null;
   rating?: number | null;
   attendanceConfirmed?: boolean;
+  checkInPhoto?: string | null;
+  checkInLat?: number | null;
+  checkInLng?: number | null;
+  checkInTime?: string | null;
+  checkOutPhoto?: string | null;
+  checkOutLat?: number | null;
+  checkOutLng?: number | null;
+  checkOutTime?: string | null;
+  paymentStatus?: 'PENDING' | 'PAID' | null;
+  paymentDueAt?: string | null;
+  paymentPaidAt?: string | null;
+  paymentReference?: string | null;
+  paymentProofKey?: string | null;
   createdAt: string;
   event?: EventItem;
   worker?: {
@@ -65,6 +87,76 @@ export interface ApplicationItem {
     phone: string;
     workerProfile?: WorkerProfile;
   };
+}
+
+export interface ComplaintItem {
+  id: string;
+  applicationId: string;
+  workerId: string;
+  agentId: string;
+  reason: string;
+  status: 'PENDING' | 'RESOLVED_GENUINE' | 'RESOLVED_INVALID';
+  adminNotes?: string | null;
+  resolvedAt?: string | null;
+  createdAt: string;
+  agentContactDetails?: AgentContactDetails | null;
+}
+
+export interface AdminComplaintItem {
+  id: string;
+  reason: string;
+  status: 'PENDING' | 'RESOLVED_GENUINE' | 'RESOLVED_INVALID';
+  adminNotes?: string | null;
+  resolvedAt?: string | null;
+  createdAt: string;
+  worker: {
+    id: string;
+    phone?: string;
+    name: string;
+    profilePhotoKey?: string | null;
+    gpayNumber?: string | null;
+    hasIdProof: boolean;
+  };
+  agent: {
+    id: string;
+    phone?: string;
+    name: string;
+    whatsappNumber?: string | null;
+    hasIdProof: boolean;
+  };
+  event: {
+    id: string;
+    title: string;
+    location: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    payPerWorker: number;
+  } | null;
+  application: {
+    id: string;
+    checkInPhoto?: string | null;
+    checkInTime?: string | null;
+    checkInLat?: number | null;
+    checkInLng?: number | null;
+    checkOutPhoto?: string | null;
+    checkOutTime?: string | null;
+    checkOutLat?: number | null;
+    checkOutLng?: number | null;
+    paymentStatus?: 'PENDING' | 'PAID' | null;
+    paymentDueAt?: string | null;
+    paymentPaidAt?: string | null;
+    paymentReference?: string | null;
+    paymentProofKey?: string | null;
+  } | null;
+}
+
+export interface AgentContactDetails {
+  name: string;
+  phone: string;
+  whatsappNumber: string;
+  eventTitle: string;
+  payPerWorker: number;
 }
 
 export const getAuthToken = () => localStorage.getItem('gigcater_token');
@@ -102,7 +194,7 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ phone }),
   }),
-  verifyOtp: (phone: string, code: string, role: 'AGENT' | 'WORKER') =>
+  verifyOtp: (phone: string, code: string, role: 'AGENT' | 'WORKER' | 'ADMIN') =>
     request<{ token: string; user: User }>('/auth/verify-otp', {
       method: 'POST',
       body: JSON.stringify({ phone, code, role }),
@@ -117,19 +209,34 @@ export const api = {
     contactPhone: string;
     profilePhotoKey?: string | null;
     idProofKey?: string | null;
+    gpayNumber?: string | null;
   }) => request<{ message: string; profile: WorkerProfile }>('/profile', {
     method: 'POST',
     body: JSON.stringify(profileData),
   }),
+  // Securely fetches a user's own (or, for an Admin, any) ID proof document as a blob URL.
+  // Never use a plain <a href> / <img src> for this — the endpoint requires an auth header.
+  getIdProofBlobUrl: async (role: 'worker' | 'agent', userId: string): Promise<string> => {
+    const token = getAuthToken();
+    const res = await fetch(`${API_BASE}/profile/id-proof/${role}/${userId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Failed to load ID proof document.');
+    }
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  },
 
-  // Agent Profile (Verification & Anti-Fake Agent Protection)
+  // Agent Profile
   getAgentProfile: () => request<{ profile: AgentProfile }>('/profile/agent'),
   saveAgentProfile: (profileData: {
-    agencyName: string;
-    businessLicense: string;
-    contactEmail: string;
-    officeAddress: string;
-    licenseDocKey?: string | null;
+    name: string;
+    phone: string;
+    photos?: string | null;
+    whatsappNumber: string;
+    originalProofDoc?: string | null;
   }) => request<{ message: string; profile: AgentProfile }>('/profile/agent', {
     method: 'POST',
     body: JSON.stringify(profileData),
@@ -150,6 +257,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(eventData),
     }),
+  deleteEvent: (id: string) =>
+    request<{ message: string }>(`/events/${id}`, {
+      method: 'DELETE',
+    }),
   updateEventStatus: (id: string, status: 'OPEN' | 'COMPLETED' | 'CANCELLED') =>
     request<{ message: string; event: EventItem }>(`/events/${id}/status`, {
       method: 'PATCH',
@@ -157,10 +268,10 @@ export const api = {
     }),
 
   // Applications
-  applyForEvent: (eventId: string) =>
+  applyForEvent: (eventId: string, groupSize: number = 1, additionalWorkers: AdditionalWorker[] = []) =>
     request<{ message: string; application: ApplicationItem }>('/applications/apply', {
       method: 'POST',
-      body: JSON.stringify({ eventId }),
+      body: JSON.stringify({ eventId, groupSize, additionalWorkers }),
     }),
   getMyApplications: () => request<{ applications: ApplicationItem[] }>('/applications/my-applications'),
   updateApplicationStatus: (
@@ -172,9 +283,48 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ status, rating }),
     }),
+  cancelApplication: (id: string) =>
+    request<{ message: string }>(`/applications/${id}`, {
+      method: 'DELETE',
+    }),
+  confirmPayment: (id: string) =>
+    request<{ message: string; application: ApplicationItem }>(`/applications/${id}/payment-confirm`, {
+      method: 'PATCH',
+    }),
+  markPaid: (id: string, paymentProofKey: string, paymentReference?: string) =>
+    request<{ message: string; application: ApplicationItem }>(`/applications/${id}/mark-paid`, {
+      method: 'PATCH',
+      body: JSON.stringify({ paymentReference, paymentProofKey }),
+    }),
+  fileComplaint: (applicationId: string, reason: string) =>
+    request<{ message: string; complaint: ComplaintItem }>('/complaints', {
+      method: 'POST',
+      body: JSON.stringify({ applicationId, reason }),
+    }),
+  getMyComplaints: () =>
+    request<{ complaints: ComplaintItem[] }>('/complaints/my-complaints'),
+
+  // Admin
+  getAdminComplaints: () =>
+    request<{ complaints: AdminComplaintItem[] }>('/admin/complaints'),
+  resolveComplaint: (id: string, status: 'RESOLVED_GENUINE' | 'RESOLVED_INVALID', adminNotes?: string) =>
+    request<{ message: string; complaint: AdminComplaintItem }>(`/admin/complaints/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, adminNotes }),
+    }),
+  checkIn: (id: string, checkInPhoto: string, latitude: number, longitude: number) =>
+    request<{ message: string; application: ApplicationItem }>(`/applications/${id}/check-in`, {
+      method: 'POST',
+      body: JSON.stringify({ checkInPhoto, latitude, longitude }),
+    }),
+  checkOut: (id: string, checkOutPhoto: string, latitude: number, longitude: number) =>
+    request<{ message: string; application: ApplicationItem }>(`/applications/${id}/check-out`, {
+      method: 'POST',
+      body: JSON.stringify({ checkOutPhoto, latitude, longitude }),
+    }),
 
   // S3 Presigned URL Upload
-  getPresignedUrl: (fileType: 'profilePhoto' | 'idProof', fileName: string) =>
+  getPresignedUrl: (fileType: 'profilePhoto' | 'idProof' | 'checkInPhoto' | 'checkOutPhoto' | 'paymentProof', fileName: string) =>
     request<{ uploadUrl: string; objectKey: string; fileUrl: string; isMock?: boolean }>('/upload/presigned-url', {
       method: 'POST',
       body: JSON.stringify({ fileType, fileName }),

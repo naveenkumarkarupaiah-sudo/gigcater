@@ -9,6 +9,20 @@ exports.isDbConnected = false;
 exports.memoryDb = {
     users: [],
     workerProfiles: [],
+    agentProfiles: [
+        {
+            id: 'agent-demo-prof-1',
+            userId: 'agent-demo-id',
+            name: 'Robert Vance',
+            phone: '+1 555-0199',
+            photos: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=150',
+            whatsappNumber: '+1 555-0199',
+            originalProofDoc: 'PROOF-ORIGINAL-VISA-80162.pdf',
+            verificationStatus: 'VERIFIED',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        }
+    ],
     events: [
         {
             id: 'demo-evt-1',
@@ -69,8 +83,11 @@ exports.memoryDb = {
         }
     ],
     applications: [],
+    complaints: [],
 };
+const firebase_1 = require("./firebase");
 async function checkDatabaseConnection() {
+    (0, firebase_1.initializeFirebaseDatabase)();
     try {
         await exports.prisma.$connect();
         await exports.prisma.$queryRaw `SELECT 1`;
@@ -80,6 +97,6 @@ async function checkDatabaseConnection() {
     catch (error) {
         exports.isDbConnected = false;
         console.warn('⚠️ Could not connect to PostgreSQL database on localhost:5432.');
-        console.warn('ℹ️ Fallback in-memory database enabled for seamless local dev & instant testing.');
+        console.warn('ℹ️ Firebase Project "gigcater-72cc4" database & fallback in-memory database enabled for seamless local dev & instant testing.');
     }
 }

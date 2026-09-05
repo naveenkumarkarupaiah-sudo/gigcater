@@ -41,14 +41,24 @@ router.post('/verify-otp', async (req, res) => {
   const { phone, code, role } = req.body;
 
   if (!phone || !code || !role) {
-    return res.status(400).json({ error: 'Phone, OTP code, and role (AGENT or WORKER) are required.' });
+    return res.status(400).json({ error: 'Phone, OTP code, and role (AGENT, WORKER, or ADMIN) are required.' });
   }
 
-  if (role !== 'AGENT' && role !== 'WORKER') {
-    return res.status(400).json({ error: 'Invalid role. Must be AGENT or WORKER.' });
+  if (role !== 'AGENT' && role !== 'WORKER' && role !== 'ADMIN') {
+    return res.status(400).json({ error: 'Invalid role. Must be AGENT, WORKER, or ADMIN.' });
   }
 
   const cleanPhone = (phone as string).trim();
+
+  // ADMIN is a trusted, platform-internal role — only pre-approved phone numbers may assume it.
+  // Without this check anyone could self-elevate to ADMIN and gain access to private ID proof documents.
+  if (role === 'ADMIN') {
+    const adminPhones = (process.env.ADMIN_PHONES || '').split(',').map(p => p.trim()).filter(Boolean);
+    if (!adminPhones.includes(cleanPhone)) {
+      return res.status(403).json({ error: 'This phone number is not authorized for Admin access.' });
+    }
+  }
+
   const storedCode = otpStore[cleanPhone] || '123456';
 
   if (code !== storedCode && code !== '123456') {
