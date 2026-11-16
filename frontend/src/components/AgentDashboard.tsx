@@ -434,38 +434,6 @@ export const AgentDashboard: React.FC<AgentDashboardProps> = ({ activeTab, setAc
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* FREEFORM WORK CATEGORY */}
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1.5">Catering Work Category (Type Any Category) *</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Banquet Serving, Barista, Live Cooking, Buffet Manager..."
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    required
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:bg-white focus:border-emerald-500 font-semibold"
-                  />
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {['Banquet Serving', 'Kitchen & Cooking', 'Bartending', 'Clearing & Busser', 'Live Chef Assistant', 'VIP Attendant'].map((catChip) => {
-                      const isSelected = category === catChip;
-                      return (
-                        <button
-                          key={catChip}
-                          type="button"
-                          onClick={() => setCategory(catChip)}
-                          className={`text-[10px] px-2.5 py-1 rounded-lg border font-bold transition ${
-                            isSelected
-                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600'
-                              : 'bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-900 border-slate-200'
-                          }`}
-                        >
-                          {isSelected ? `✓ ${catChip} Selected` : `Choose ${catChip}`}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
                 <div>
                   <label className="block font-bold text-slate-700 mb-1.5">Function Date *</label>
                   <input
@@ -477,18 +445,18 @@ export const AgentDashboard: React.FC<AgentDashboardProps> = ({ activeTab, setAc
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:bg-white focus:border-emerald-500 font-semibold"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1.5">Location Address *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Dhanmondi, Dhaka Sector 4"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  required
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:bg-white focus:border-emerald-500 font-semibold"
-                />
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1.5">Location Address *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Dhanmondi, Dhaka Sector 4"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    required
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:bg-white focus:border-emerald-500 font-semibold"
+                  />
+                </div>
               </div>
 
               <div>

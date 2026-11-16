@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { api, setAuthToken, User } from '../api';
-import { Utensils, ShieldCheck, UserCheck, Clock, DollarSign, Award, ArrowRight, ShieldAlert, Percent } from 'lucide-react';
+import { Utensils, ShieldCheck, UserCheck, Clock, DollarSign, Award, ArrowRight, Percent } from 'lucide-react';
 
 interface AuthScreenProps {
   onSuccess: (user: User) => void;
@@ -10,13 +10,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleQuickLogin = async (selectedRole: 'AGENT' | 'WORKER' | 'ADMIN') => {
+  const handleQuickLogin = async (selectedRole: 'AGENT' | 'WORKER') => {
     setLoading(true);
     setError(null);
     try {
-      // Use standard default phone numbers depending on the selected role.
-      // ADMIN must match the backend's ADMIN_PHONES allowlist — anyone else is rejected server-side.
-      const testPhone = selectedRole === 'WORKER' ? '9876543210' : selectedRole === 'ADMIN' ? '0000000000' : '9999999999';
+      // Use fixed test phone numbers per role for quick portal access.
+      const testPhone = selectedRole === 'WORKER' ? '9876543210' : '9999999999';
       const testOtp = '123456';
 
       const res = await api.verifyOtp(testPhone, testOtp, selectedRole);
@@ -143,24 +142,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess }) => {
                   </div>
                 </div>
                 <ArrowRight className="w-5 h-5 text-slate-400 group-hover:text-emerald-600 group-hover:translate-x-1 transition" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('ADMIN')}
-                disabled={loading}
-                className="w-full bg-slate-50 hover:bg-red-50 border border-slate-200 hover:border-red-300 rounded-2xl p-5 flex items-center justify-between transition-all duration-300 group shadow-xs hover:shadow-md disabled:opacity-60 text-left"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-red-100 text-red-700 flex items-center justify-center shrink-0 group-hover:scale-110 transition">
-                    <ShieldAlert className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-extrabold text-slate-900">Enter as Platform Admin</div>
-                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">Investigate payment complaints and verify ID proofs</p>
-                  </div>
-                </div>
-                <ArrowRight className="w-5 h-5 text-slate-400 group-hover:text-red-600 group-hover:translate-x-1 transition" />
               </button>
             </div>
 

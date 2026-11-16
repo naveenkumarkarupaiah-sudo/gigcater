@@ -62,6 +62,9 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({ user, activeTa
   // Payment confirm state
   const [confirmingPaymentId, setConfirmingPaymentId] = useState<string | null>(null);
 
+  // Profile prompt modal — shown when worker tries to apply without a profile
+  const [showProfilePrompt, setShowProfilePrompt] = useState(false);
+
   // Complaint modal state
   const [complaintAppId, setComplaintAppId] = useState<string | null>(null);
   const [complaintReason, setComplaintReason] = useState('');
@@ -254,6 +257,11 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({ user, activeTa
   };
 
   const openApplyModal = (evt: EventItem) => {
+    // If the worker hasn't created a profile yet, show the profile prompt instead
+    if (!user.hasProfile) {
+      setShowProfilePrompt(true);
+      return;
+    }
     setModalEvent(evt);
     setGroupSize(1);
     setAdditionalWorkers([]);
@@ -433,6 +441,27 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({ user, activeTa
             </form>
           </div>
 
+          {/* No-profile reminder banner */}
+          {!user.hasProfile && (
+            <div className="flex items-center gap-4 bg-amber-50 border border-amber-300 rounded-2xl px-5 py-4 shadow-xs">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                <UserCheck className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-extrabold text-amber-900">Complete your Worker Profile to apply for gigs</p>
+                <p className="text-[11px] text-amber-700 font-medium mt-0.5">
+                  Agents need your profile details before they can review your application. It only takes a minute!
+                </p>
+              </div>
+              <button
+                onClick={onGoToProfile}
+                className="shrink-0 green-gradient-bg text-white font-extrabold text-xs px-4 py-2 rounded-xl shadow-md shadow-emerald-600/20 hover:opacity-90 transition whitespace-nowrap"
+              >
+                Create Profile
+              </button>
+            </div>
+          )}
+
           {/* Category Chips */}
           <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-1">
             <span className="text-xs font-extrabold text-slate-500 flex items-center gap-1.5 mr-1 shrink-0">
@@ -548,9 +577,13 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({ user, activeTa
                       ) : (
                         <button
                           onClick={() => openApplyModal(evt)}
-                          className="green-gradient-bg hover:opacity-95 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl transition shadow-md shadow-emerald-600/20 flex items-center gap-1"
+                          className={`font-extrabold text-xs px-4 py-2.5 rounded-xl transition shadow-md flex items-center gap-1 ${
+                            user.hasProfile
+                              ? 'green-gradient-bg hover:opacity-95 text-white shadow-emerald-600/20'
+                              : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 shadow-amber-200/40'
+                          }`}
                         >
-                          Apply Now
+                          {user.hasProfile ? 'Apply Now' : 'Apply Now ⚠'}
                           <ArrowUpRight className="w-3.5 h-3.5" />
                         </button>
                       )}
@@ -862,6 +895,70 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({ user, activeTa
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* PROFILE REQUIRED MODAL */}
+      {showProfilePrompt && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-7 shadow-2xl border border-slate-200 text-left space-y-5">
+            {/* Header */}
+            <div className="flex justify-between items-start">
+              <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                <UserCheck className="w-7 h-7" />
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowProfilePrompt(false)}
+                className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div>
+              <h3 className="text-lg font-extrabold text-slate-900 tracking-tight">
+                Profile Required to Apply
+              </h3>
+              <p className="text-xs text-slate-500 font-medium mt-1.5 leading-relaxed">
+                Catering agents need your worker profile — including your name, skills, and ID proof — before they can review your application.
+              </p>
+            </div>
+
+            {/* Steps */}
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-3">
+              {[
+                { step: '1', text: 'Fill in your name, skills & work experience' },
+                { step: '2', text: 'Upload your ID proof photo' },
+                { step: '3', text: 'Come back and apply for any gig instantly' },
+              ].map(({ step, text }) => (
+                <div key={step} className="flex items-center gap-3">
+                  <span className="w-6 h-6 rounded-full green-gradient-bg text-white text-[11px] font-extrabold flex items-center justify-center shrink-0">
+                    {step}
+                  </span>
+                  <span className="text-xs font-semibold text-slate-700">{text}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowProfilePrompt(false)}
+                className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+              >
+                Not Now
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowProfilePrompt(false); onGoToProfile(); }}
+                className="flex-1 px-4 py-2.5 green-gradient-bg text-white text-xs font-extrabold rounded-xl shadow-md shadow-emerald-600/20 hover:opacity-90 transition flex items-center justify-center gap-1.5"
+              >
+                <UserCheck className="w-3.5 h-3.5" />
+                Create My Profile
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

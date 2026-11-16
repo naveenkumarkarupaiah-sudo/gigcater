@@ -1,6 +1,6 @@
 import React from 'react';
 import { User } from '../api';
-import { Utensils, Calendar, UserCheck, PlusCircle, LogOut, Sparkles, Building, ShieldAlert } from 'lucide-react';
+import { Utensils, Calendar, UserCheck, PlusCircle, LogOut, Sparkles, User as UserIcon } from 'lucide-react';
 
 interface HeaderProps {
   user: User | null;
@@ -18,7 +18,7 @@ export const Header: React.FC<HeaderProps> = ({ user, onLogout, activeTab, setAc
           <div className="flex items-center space-x-6">
             <div 
               className="flex items-center space-x-3 cursor-pointer group" 
-              onClick={() => setActiveTab && setActiveTab(user?.role === 'AGENT' ? 'my-events' : user?.role === 'ADMIN' ? 'complaints' : 'browse')}
+              onClick={() => setActiveTab && setActiveTab(user?.role === 'AGENT' ? 'my-events' : 'browse')}
             >
               <div className="w-10 h-10 rounded-2xl green-gradient-bg flex items-center justify-center text-white shadow-md shadow-emerald-500/25 group-hover:scale-105 transition-transform duration-200">
                 <Utensils className="w-5 h-5" />
@@ -37,19 +37,7 @@ export const Header: React.FC<HeaderProps> = ({ user, onLogout, activeTab, setAc
             {/* Navigation Tabs */}
             {user && setActiveTab && (
               <nav className="hidden md:flex space-x-1.5 ml-4 bg-slate-100/90 p-1.5 rounded-2xl border border-slate-200/80 shadow-inner">
-                {user.role === 'ADMIN' ? (
-                  <button
-                    onClick={() => setActiveTab('complaints')}
-                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
-                      activeTab === 'complaints'
-                        ? 'bg-white text-emerald-700 shadow-sm border border-emerald-100 scale-100'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
-                    }`}
-                  >
-                    <ShieldAlert className="w-3.5 h-3.5" />
-                    Payment Complaints
-                  </button>
-                ) : user.role === 'WORKER' ? (
+                {user.role === 'WORKER' ? (
                   <>
                     <button
                       onClick={() => setActiveTab('browse')}
@@ -110,6 +98,17 @@ export const Header: React.FC<HeaderProps> = ({ user, onLogout, activeTab, setAc
                       Worker Requests
                     </button>
                     <button
+                      onClick={() => setActiveTab('create-event')}
+                      className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
+                        activeTab === 'create-event'
+                          ? 'green-gradient-bg text-white shadow-md shadow-emerald-600/20'
+                          : 'text-emerald-700 hover:bg-emerald-50'
+                      }`}
+                    >
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      Post Work
+                    </button>
+                    <button
                       onClick={() => setActiveTab('agent-profile')}
                       className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
                         activeTab === 'agent-profile'
@@ -120,17 +119,6 @@ export const Header: React.FC<HeaderProps> = ({ user, onLogout, activeTab, setAc
                       <UserCheck className="w-3.5 h-3.5" />
                       Agent Profile
                     </button>
-                    <button
-                      onClick={() => setActiveTab('create-event')}
-                      className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
-                        activeTab === 'create-event'
-                          ? 'green-gradient-bg text-white shadow-md shadow-emerald-600/20'
-                          : 'text-emerald-700 hover:bg-emerald-50'
-                      }`}
-                    >
-                      <PlusCircle className="w-3.5 h-3.5" />
-                      Post Quick Event
-                    </button>
                   </>
                 )}
               </nav>
@@ -140,15 +128,22 @@ export const Header: React.FC<HeaderProps> = ({ user, onLogout, activeTab, setAc
           {/* User Profile Badge & Logout */}
           {user && (
             <div className="flex items-center space-x-3 text-xs">
-              <div className="flex items-center space-x-2.5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-2xl px-3.5 py-1.5 shadow-xs">
-                <div className="w-7 h-7 rounded-xl green-gradient-bg text-white font-black text-xs flex items-center justify-center shadow-xs">
-                  {user.role === 'AGENT' ? 'AG' : user.role === 'ADMIN' ? 'AD' : 'WK'}
+              <button
+                onClick={() => setActiveTab && setActiveTab(user.role === 'AGENT' ? 'agent-profile' : 'profile')}
+                className="flex items-center space-x-2.5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-2xl px-3.5 py-1.5 shadow-xs hover:border-emerald-400 hover:shadow-md transition-all group"
+                title="Edit your profile"
+              >
+                <div className="w-7 h-7 rounded-xl green-gradient-bg text-white font-black text-xs flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
+                  {user.role === 'AGENT' ? 'AG' : 'WK'}
                 </div>
                 <div className="text-left">
                   <div className="font-extrabold text-slate-900 text-[11px] leading-tight">{user.phone}</div>
-                  <div className="text-[9px] text-emerald-700 font-bold uppercase tracking-wider">{user.role} Portal</div>
+                  <div className="text-[9px] text-emerald-700 font-bold uppercase tracking-wider flex items-center gap-1">
+                    {user.role} Portal
+                    <UserIcon className="w-2.5 h-2.5 text-emerald-500" />
+                  </div>
                 </div>
-              </div>
+              </button>
 
               <button
                 onClick={onLogout}
