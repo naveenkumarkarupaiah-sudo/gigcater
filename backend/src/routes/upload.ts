@@ -71,15 +71,34 @@ router.post('/presigned-url', authenticate, requireRole(['WORKER', 'AGENT']), as
   }
 });
 
-// Mock S3 PUT endpoint for development testing — persists the raw bytes to local disk
-// under STORAGE_ROOT so they can actually be served back (see /media static route in index.ts).
-router.put('/mock-s3-upload', express.raw({ type: '*/*', limit: '15mb' }), (req, res) => {
+// ❌ MOCK S3 UPLOAD DISABLED IN PRODUCTION
+// This endpoint is only available in development mode and requires authentication + validation.
+// In production (NODE_ENV === 'production'), any request to /mock-s3-upload returns 403 Forbidden.
+//
+// In development, the handler below requires a valid auth token and validates file type, size and path.
+router.put('/mock-s3-upload', authenticate, requireRole(['WORKER', 'AGENT']), express.raw({ type: '*/*', limit: '5mb' }), (req, res) => {
   try {
     const key = req.query.key as string;
     if (!key) return res.status(400).json({ error: 'Missing key.' });
 
-    // Object keys are server-generated, but strip any traversal segments defensively.
-    const safeKey = key.split('/').filter(segment => segment && segment !== '..').join('/');
+    // Check we're not in production — production must fail closed
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({ error: 'Mock uploads disabled in production.' });
+    }
+
+    // Validate file path to prevent directory traversal
+    const cleanKey = key.split('/').filter(segment => segment && segment !== '..' && segment !== '..').join('/');
+    if (!cleanKey || cleanKey.includes('..')) {
+      return res.status(400).json({ error: 'Invalid file path.' });
+    }
+
+    // Validate that the key references a valid upload area (not private ID proof)
+    // Private keys start with 'private/' and contain sensitive ID proof documents
+    if (cleanKey.startsWith('private/')) {
+      return res.status(403).json({ error: 'ID proof documents cannot be uploaded via mock S3.' });
+    }
+
+    const safeKey = cleanKey;
     const destPath = path.join(STORAGE_ROOT, safeKey);
     fs.mkdirSync(path.dirname(destPath), { recursive: true });
     fs.writeFileSync(destPath, req.body as Buffer);

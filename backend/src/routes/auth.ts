@@ -1,172 +1,291 @@
+
 import { Router, Response } from 'express';
-import { prisma, isDbConnected, memoryDb } from '../prisma';
+import { prisma, isDbConnected } from '../prisma';
 import { signToken, authenticate, AuthRequest } from '../middleware/auth';
 import { Role } from '@prisma/client';
-import rateLimit from 'express-rate-limit';
+import { verifyFirebaseIdToken } from '../firebase';
 
 const router = Router();
 
-export const otpLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  message: { error: 'Too many OTP requests from this IP, please try again after 15 minutes.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-const otpStore: Record<string, string> = {};
-
-// POST /api/auth/send-otp
-router.post('/send-otp', otpLimiter, async (req, res) => {
-  const { phone } = req.body;
-  if (!phone || typeof phone !== 'string') {
-    return res.status(400).json({ error: 'Valid phone number is required.' });
-  }
-
-  const cleanPhone = phone.trim();
-  const code = '123456';
-  otpStore[cleanPhone] = code;
-
-  console.log(`[AUTH] OTP sent to ${cleanPhone}: ${code}`);
-
-  return res.json({
-    message: 'OTP sent successfully',
-    phone: cleanPhone,
-    testCode: code,
+// Disable legacy OTP authentication
+router.post('/send-otp', (_req, res) => {
+  return res.status(403).json({
+    error: 'OTP authentication is disabled. Please sign in with Google.',
   });
 });
 
-// POST /api/auth/verify-otp
-router.post('/verify-otp', async (req, res) => {
-  const { phone, code, role } = req.body;
+router.post('/verify-otp', (_req, res) => {
+  return res.status(403).json({
+    error: 'OTP authentication is disabled. Please sign in with Google.',
+  });
+});
 
-  if (!phone || !code || !role) {
-    return res.status(400).json({ error: 'Phone, OTP code, and role (AGENT, WORKER, or ADMIN) are required.' });
-  }
-
-  if (role !== 'AGENT' && role !== 'WORKER' && role !== 'ADMIN') {
-    return res.status(400).json({ error: 'Invalid role. Must be AGENT, WORKER, or ADMIN.' });
-  }
-
-  const cleanPhone = (phone as string).trim();
-
-  // ADMIN is a trusted, platform-internal role — only pre-approved phone numbers may assume it.
-  // Without this check anyone could self-elevate to ADMIN and gain access to private ID proof documents.
-  if (role === 'ADMIN') {
-    const adminPhones = (process.env.ADMIN_PHONES || '').split(',').map(p => p.trim()).filter(Boolean);
-    if (!adminPhones.includes(cleanPhone)) {
-      return res.status(403).json({ error: 'This phone number is not authorized for Admin access.' });
+// POST /api/auth/google
+router.post('/google', async (req, res) => {
+  try {
+    if (!isDbConnected) {
+      return res.status(503).json({
+        error: 'Database service unavailable.',
+      });
     }
-  }
 
-  const storedCode = otpStore[cleanPhone] || '123456';
+    const { idToken, requestedRole } = req.body ?? {};
 
-  if (code !== storedCode && code !== '123456') {
-    return res.status(400).json({ error: 'Invalid OTP code.' });
-  }
+    if (!idToken || typeof idToken !== 'string') {
+      return res.status(400).json({
+        error: 'Valid Firebase ID token is required.',
+      });
+    }
 
-  delete otpStore[cleanPhone];
+    // Only allow Worker and Agent portal selection
+    if (requestedRole !== 'WORKER' && requestedRole !== 'AGENT') {
+      return res.status(400).json({
+        error: 'Please select a valid Worker or Agent role.',
+      });
+    }
 
-  let user: any;
+    const selectedRole: Role = requestedRole;
 
-  if (isDbConnected) {
-    user = await prisma.user.findUnique({
-      where: { phone: cleanPhone },
-      include: { workerProfile: true, agentProfile: true },
+    // Verify Google authentication using Firebase Admin
+    let decodedToken;
+
+    try {
+      decodedToken = await verifyFirebaseIdToken(idToken.trim());
+    } catch (error: any) {
+      console.error(
+        '[AUTH] Firebase verification failed:',
+        error.message || error
+      );
+
+      return res.status(401).json({
+        error: 'Invalid or expired Google authentication token.',
+      });
+    }
+
+    const { uid } = decodedToken;
+
+    if (!uid) {
+      return res.status(401).json({
+        error: 'Verified Firebase user ID is missing.',
+      });
+    }
+
+    // Find the existing Google user
+    let user = await prisma.user.findUnique({
+      where: { firebaseUid: uid },
+      include: {
+        workerProfile: true,
+        agentProfile: true,
+      },
     });
 
     if (!user) {
+      // First-time Google login
       user = await prisma.user.create({
         data: {
-          phone: cleanPhone,
-          role: role as Role,
+          firebaseUid: uid,
+          phone: null,
+          role: selectedRole,
         },
-        include: { workerProfile: true, agentProfile: true },
+        include: {
+          workerProfile: true,
+          agentProfile: true,
+        },
       });
-    } else if (user.role !== role) {
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: { role: role as Role },
-        include: { workerProfile: true, agentProfile: true },
-      });
-    }
-  } else {
-    // Memory DB Fallback
-    user = memoryDb.users.find(u => u.phone === cleanPhone);
-    if (!user) {
-      const workerProf = memoryDb.workerProfiles.find(p => p.contactPhone === cleanPhone);
-      const agentProf = memoryDb.agentProfiles.find(p => p.userId === `usr_${cleanPhone}`);
-      user = {
-        id: `usr_${cleanPhone.replace(/[^0-9]/g, '')}`,
-        phone: cleanPhone,
-        role,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        workerProfile: workerProf || null,
-        agentProfile: agentProf || null,
-      };
-      memoryDb.users.push(user);
+
+      console.log(
+        `[AUTH] Created Google user: ${user.id} (Role: ${user.role})`
+      );
     } else {
-      user.role = role;
-      const agentProf = memoryDb.agentProfiles.find(p => p.userId === user.id);
-      user.agentProfile = agentProf || user.agentProfile || null;
+      // Do not allow an Admin account to change roles
+      // through the public Google login portal.
+      if (user.role === 'ADMIN') {
+        return res.status(403).json({
+          error: 'Admin accounts cannot use Worker/Agent role switching.',
+        });
+      }
+
+      // Switch the existing user's active role
+      if (user.role !== selectedRole) {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { role: selectedRole },
+          include: {
+            workerProfile: true,
+            agentProfile: true,
+          },
+        });
+
+        console.log(
+          `[AUTH] Switched Google user ${user.id} to ${user.role}`
+        );
+      } else {
+        console.log(
+          `[AUTH] Returning Google user: ${user.id} (Role: ${user.role})`
+        );
+      }
     }
-  }
 
-  const token = signToken({
-    id: user.id,
-    phone: user.phone,
-    role: user.role,
-  });
-
-  return res.json({
-    message: 'Authentication successful',
-    token,
-    user: {
+    // Generate JWT using the updated role
+    const token = signToken({
       id: user.id,
       phone: user.phone,
       role: user.role,
-      hasProfile: !!(user.workerProfile || user.agentProfile),
-      workerProfile: user.workerProfile || null,
-      agentProfile: user.agentProfile || null,
-    },
-  });
+    });
+
+    return res.json({
+      message: 'Authentication successful',
+      token,
+      user: {
+        id: user.id,
+        phone: user.phone,
+        role: user.role,
+        firebaseUid: user.firebaseUid,
+        hasProfile: !!(user.workerProfile || user.agentProfile),
+        workerProfile: user.workerProfile || null,
+        agentProfile: user.agentProfile || null,
+      },
+    });
+  } catch (error: any) {
+    console.error('[AUTH] Google Sign-In error:', error);
+
+    return res.status(500).json({
+      error: 'Internal server error during authentication.',
+    });
+  }
 });
+
+// POST /api/auth/switch-role
+router.post(
+  '/switch-role',
+  authenticate,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      if (!isDbConnected) {
+        return res.status(503).json({
+          error: 'Database service unavailable.',
+        });
+      }
+
+      const { role } = req.body ?? {};
+
+      if (role !== 'WORKER' && role !== 'AGENT') {
+        return res.status(400).json({
+          error: 'Invalid role selection.',
+        });
+      }
+
+      const userId = req.user!.id;
+
+      const currentUser = await prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          workerProfile: true,
+          agentProfile: true,
+        },
+      });
+
+      if (!currentUser) {
+        return res.status(404).json({
+          error: 'User account not found.',
+        });
+      }
+
+      // Never switch an Admin through this public endpoint
+      if (currentUser.role === 'ADMIN') {
+        return res.status(403).json({
+          error: 'Admin accounts cannot switch through this endpoint.',
+        });
+      }
+
+      const updatedUser = await prisma.user.update({
+        where: { id: userId },
+        data: { role },
+        include: {
+          workerProfile: true,
+          agentProfile: true,
+        },
+      });
+
+      const token = signToken({
+        id: updatedUser.id,
+        phone: updatedUser.phone,
+        role: updatedUser.role,
+      });
+
+      return res.json({
+        message: `Active mode switched to ${role}`,
+        token,
+        user: {
+          id: updatedUser.id,
+          phone: updatedUser.phone,
+          role: updatedUser.role,
+          activeMode: role,
+          firebaseUid: updatedUser.firebaseUid,
+          hasProfile: !!(
+            updatedUser.workerProfile || updatedUser.agentProfile
+          ),
+          workerProfile: updatedUser.workerProfile || null,
+          agentProfile: updatedUser.agentProfile || null,
+        },
+      });
+    } catch (error: any) {
+      console.error('[AUTH] Role switch error:', error);
+
+      return res.status(500).json({
+        error: 'Failed to switch user mode.',
+      });
+    }
+  }
+);
 
 // GET /api/auth/me
 router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
-  if (!req.user) return res.status(401).json({ error: 'Not authenticated' });
-
-  let user: any;
-  if (isDbConnected) {
-    user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      include: { workerProfile: true, agentProfile: true },
-    });
-  } else {
-    user = memoryDb.users.find(u => u.id === req.user!.id);
-    if (user) {
-      const workerProf = memoryDb.workerProfiles.find(p => p.userId === user.id);
-      const agentProf = memoryDb.agentProfiles.find(p => p.userId === user.id);
-      user.workerProfile = workerProf || null;
-      user.agentProfile = agentProf || null;
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        error: 'Not authenticated.',
+      });
     }
-  }
 
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
-  }
+    if (!isDbConnected) {
+      return res.status(503).json({
+        error: 'Database service unavailable.',
+      });
+    }
 
-  return res.json({
-    user: {
-      id: user.id,
-      phone: user.phone,
-      role: user.role,
-      hasProfile: !!(user.workerProfile || user.agentProfile),
-      workerProfile: user.workerProfile || null,
-      agentProfile: user.agentProfile || null,
-    },
-  });
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: {
+        workerProfile: true,
+        agentProfile: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'User not found.',
+      });
+    }
+
+    return res.json({
+      user: {
+        id: user.id,
+        phone: user.phone,
+        role: user.role,
+        firebaseUid: user.firebaseUid,
+        hasProfile: !!(user.workerProfile || user.agentProfile),
+        workerProfile: user.workerProfile || null,
+        agentProfile: user.agentProfile || null,
+      },
+    });
+  } catch (error: any) {
+    console.error('[AUTH] Fetch user error:', error);
+
+    return res.status(500).json({
+      error: 'Failed to retrieve user details.',
+    });
+  }
 });
 
 export default router;

@@ -1,4 +1,30 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 dist/
+
+# Environment files and secrets
 .env
-backend/storage
+.env.*
+*.env
+*.env.*
+!.env.example
+.env.txt
+
+# Local backups
+backups/
+*.bak
+*.backup
+
+# Local review files
+auth-changes.txt
+auth.ts
+backend/prisma-diff-*.sql
+
+# Local uploads
+backend/storage/
+
+# Development cache
+.vite/
+frontend/node_modules/.vite/frontend/node_modules/.vite/

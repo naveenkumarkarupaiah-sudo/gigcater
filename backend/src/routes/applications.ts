@@ -1,4 +1,9 @@
 import { Router, Response } from 'express';
+import {
+  ensureAgentOwnsApplication,
+  isAgentEventOwner,
+  isAllowedAgentStatusTransition,
+} from '../utils/authorization';
 import { prisma, isDbConnected, memoryDb } from '../prisma';
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
 import rateLimit from 'express-rate-limit';
@@ -223,15 +228,47 @@ router.patch('/:id/status', authenticate, requireRole(['AGENT']), async (req: Au
 
       if (!application) return res.status(404).json({ error: 'Application not found.' });
 
+      // Only the agent that owns this application's event may change its status.
+      try {
+        ensureAgentOwnsApplication(req.user!.id, application);
+      } catch (err: any) {
+        return res.status(err.status || 403).json({ error: err.message || 'Forbidden.' });
+      }
+
+      if (!isAllowedAgentStatusTransition(application.status, status)) {
+        return res.status(400).json({
+          error: `Cannot change application status from ${application.status} to ${status}.`,
+        });
+      }
+
+      const updateData: any = { status };
+      if (rating && typeof rating === 'number') {
+        updateData.rating = Math.min(5, Math.max(1, rating));
+      }
+      if (typeof attendanceConfirmed === 'boolean') {
+        updateData.attendanceConfirmed = attendanceConfirmed;
+      }
+
       updatedApp = await prisma.application.update({
         where: { id },
-        data: { status },
+        data: updateData,
         include: { worker: { include: { workerProfile: true } }, event: true },
       });
     } else {
       const appItem = memoryDb.applications.find(a => a.id === id);
       if (!appItem) return res.status(404).json({ error: 'Application not found.' });
-      
+
+      const appEvent = memoryDb.events.find(e => e.id === appItem.eventId);
+      if (!appEvent || !isAgentEventOwner(req.user!.id, appEvent.agentId)) {
+        return res.status(403).json({ error: 'Forbidden: You can only update applications for your own events.' });
+      }
+
+      if (!isAllowedAgentStatusTransition(appItem.status, status)) {
+        return res.status(400).json({
+          error: `Cannot change application status from ${appItem.status} to ${status}.`,
+        });
+      }
+
       appItem.status = status;
 
       // ✅ CRITICAL FIX: Sync status to event's applications array so UI updates correctly
@@ -499,6 +536,14 @@ router.patch('/:id/mark-paid', authenticate, requireRole(['AGENT']), async (req:
         include: { event: true },
       });
       if (!application) return res.status(404).json({ error: 'Application not found.' });
+
+      // Only the agent that owns this application's event may mark its payment paid.
+      try {
+        ensureAgentOwnsApplication(req.user!.id, application);
+      } catch (err: any) {
+        return res.status(err.status || 403).json({ error: err.message || 'Forbidden.' });
+      }
+
       if (application.event.agentId !== req.user!.id) {
         return res.status(403).json({ error: 'Forbidden: You can only mark payment for your own events.' });
       }
@@ -521,7 +566,7 @@ router.patch('/:id/mark-paid', authenticate, requireRole(['AGENT']), async (req:
       const appItem = memoryDb.applications.find((a: any) => a.id === id);
       if (!appItem) return res.status(404).json({ error: 'Application not found.' });
       const eventItem = memoryDb.events.find((e: any) => e.id === appItem.eventId);
-      if (!eventItem || (eventItem.agentId !== req.user!.id && eventItem.agentId !== 'agent-demo-id')) {
+      if (!eventItem || !isAgentEventOwner(req.user!.id, eventItem.agentId)) {
         return res.status(403).json({ error: 'Forbidden: You can only mark payment for your own events.' });
       }
       if (appItem.paymentStatus !== 'PENDING') {

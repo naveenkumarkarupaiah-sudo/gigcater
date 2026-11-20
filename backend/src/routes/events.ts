@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma, isDbConnected, memoryDb } from '../prisma';
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
+import { isAgentEventOwner } from '../utils/authorization';
 
 const router = Router();
 
@@ -64,7 +65,7 @@ router.get('/my-events', authenticate, requireRole(['AGENT']), async (req: AuthR
       });
       return res.json({ events });
     } else {
-      const events = memoryDb.events.filter(e => e.agentId === req.user!.id || e.agentId === 'agent-demo-id');
+      const events = memoryDb.events.filter(e => isAgentEventOwner(req.user!.id, e.agentId));
       return res.json({ events });
     }
   } catch (error) {
@@ -89,13 +90,24 @@ router.get('/:id', authenticate, async (req: AuthRequest, res: Response) => {
         },
       });
     } else {
-      event = memoryDb.events.find(e => e.id === req.params.id);
+      const storedEvent = memoryDb.events.find(e => e.id === req.params.id);
+      // Shallow copy: the response below drops `applications` for non-owners, and
+      // the shared in-memory record must not be mutated.
+      event = storedEvent
+        ? { ...storedEvent, agent: storedEvent.agent || { id: storedEvent.agentId, phone: null } }
+        : undefined;
     }
 
     if (!event) {
       return res.status(404).json({ error: 'Event not found.' });
     }
 
+    // Hide private application/worker data for non-owners
+    const isOwner = event.agent && event.agent.id === req.user!.id;
+    if (!isOwner) {
+      // Remove applications data to prevent leakage
+      delete event.applications;
+    }
     return res.json({ event });
   } catch (error) {
     return res.status(500).json({ error: 'Failed to fetch event details.' });
@@ -118,12 +130,14 @@ router.post('/', authenticate, requireRole(['AGENT']), async (req: AuthRequest, 
         where: { userId: req.user!.id },
       });
       if (!agentProfile) {
+        const fallbackPhone = req.user!.phone || '';
+        const fallbackName = req.user!.phone ? `Agent (${req.user!.phone.slice(-4)})` : 'Agent';
         agentProfile = await prisma.agentProfile.create({
           data: {
             userId: req.user!.id,
-            name: `Agent (${req.user!.phone.slice(-4)})`,
-            phone: req.user!.phone,
-            whatsappNumber: req.user!.phone,
+            name: fallbackName,
+            phone: fallbackPhone,
+            whatsappNumber: fallbackPhone,
             verificationStatus: 'VERIFIED',
           },
         });
@@ -131,12 +145,14 @@ router.post('/', authenticate, requireRole(['AGENT']), async (req: AuthRequest, 
     } else {
       agentProfile = memoryDb.agentProfiles.find(p => p.userId === req.user!.id);
       if (!agentProfile) {
+        const fallbackPhone = req.user!.phone || '';
+        const fallbackName = req.user!.phone ? `Agent (${req.user!.phone.slice(-4)})` : 'Agent';
         agentProfile = {
           id: `ag_prof_${Date.now()}`,
           userId: req.user!.id,
-          name: `Agent (${req.user!.phone.slice(-4)})`,
-          phone: req.user!.phone,
-          whatsappNumber: req.user!.phone,
+          name: fallbackName,
+          phone: fallbackPhone,
+          whatsappNumber: fallbackPhone,
           verificationStatus: 'VERIFIED',
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -212,7 +228,7 @@ router.delete('/:id', authenticate, requireRole(['AGENT']), async (req: AuthRequ
       if (index === -1) return res.status(404).json({ error: 'Event not found.' });
 
       const evt = memoryDb.events[index];
-      if (evt.agentId !== req.user!.id && evt.agentId !== 'agent-demo-id') {
+      if (!isAgentEventOwner(req.user!.id, evt.agentId)) {
         return res.status(403).json({ error: 'Forbidden: You can only delete your own posted events.' });
       }
 
@@ -248,6 +264,9 @@ router.patch('/:id/status', authenticate, requireRole(['AGENT']), async (req: Au
     } else {
       const event = memoryDb.events.find(e => e.id === id);
       if (!event) return res.status(404).json({ error: 'Event not found.' });
+      if (!isAgentEventOwner(req.user!.id, event.agentId)) {
+        return res.status(403).json({ error: 'Forbidden: You do not own this event.' });
+      }
       event.status = status;
       updatedEvent = event;
     }

@@ -1,4 +1,4 @@
-const API_BASE = '/api';
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 export interface User {
   id: string;
@@ -82,11 +82,7 @@ export interface ApplicationItem {
   paymentProofKey?: string | null;
   createdAt: string;
   event?: EventItem;
-  worker?: {
-    id: string;
-    phone: string;
-    workerProfile?: WorkerProfile;
-  };
+  worker?: { id: string; phone: string; workerProfile?: WorkerProfile };
 }
 
 export interface ComplaintItem {
@@ -109,46 +105,10 @@ export interface AdminComplaintItem {
   adminNotes?: string | null;
   resolvedAt?: string | null;
   createdAt: string;
-  worker: {
-    id: string;
-    phone?: string;
-    name: string;
-    profilePhotoKey?: string | null;
-    gpayNumber?: string | null;
-    hasIdProof: boolean;
-  };
-  agent: {
-    id: string;
-    phone?: string;
-    name: string;
-    whatsappNumber?: string | null;
-    hasIdProof: boolean;
-  };
-  event: {
-    id: string;
-    title: string;
-    location: string;
-    date: string;
-    startTime: string;
-    endTime: string;
-    payPerWorker: number;
-  } | null;
-  application: {
-    id: string;
-    checkInPhoto?: string | null;
-    checkInTime?: string | null;
-    checkInLat?: number | null;
-    checkInLng?: number | null;
-    checkOutPhoto?: string | null;
-    checkOutTime?: string | null;
-    checkOutLat?: number | null;
-    checkOutLng?: number | null;
-    paymentStatus?: 'PENDING' | 'PAID' | null;
-    paymentDueAt?: string | null;
-    paymentPaidAt?: string | null;
-    paymentReference?: string | null;
-    paymentProofKey?: string | null;
-  } | null;
+  worker: { id: string; phone?: string; name: string; profilePhotoKey?: string | null; gpayNumber?: string | null; hasIdProof: boolean };
+  agent: { id: string; phone?: string; name: string; whatsappNumber?: string | null; hasIdProof: boolean };
+  event: { id: string; title: string; location: string; date: string; startTime: string; endTime: string; payPerWorker: number } | null;
+  application: { id: string; checkInPhoto?: string | null; checkInTime?: string | null; checkInLat?: number | null; checkInLng?: number | null; checkOutPhoto?: string | null; checkOutTime?: string | null; checkOutLat?: number | null; checkOutLng?: number | null; paymentStatus?: 'PENDING' | 'PAID' | null; paymentDueAt?: string | null; paymentPaidAt?: string | null; paymentReference?: string | null; paymentProofKey?: string | null } | null;
 }
 
 export interface AgentContactDetails {
@@ -199,6 +159,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ phone, code, role }),
     }),
+  loginWithGoogle: (idToken: string, requestedRole: 'AGENT' | 'WORKER') =>
+    request<{ token: string; user: User }>('/auth/google', {
+      method: 'POST',
+      body: JSON.stringify({ idToken, requestedRole }),
+    }),
   getMe: () => request<{ user: User }>('/auth/me'),
 
   // Worker Profile
@@ -210,24 +175,11 @@ export const api = {
     profilePhotoKey?: string | null;
     idProofKey?: string | null;
     gpayNumber?: string | null;
-  }) => request<{ message: string; profile: WorkerProfile }>('/profile', {
-    method: 'POST',
-    body: JSON.stringify(profileData),
-  }),
-  // Securely fetches a user's own (or, for an Admin, any) ID proof document as a blob URL.
-  // Never use a plain <a href> / <img src> for this — the endpoint requires an auth header.
-  getIdProofBlobUrl: async (role: 'worker' | 'agent', userId: string): Promise<string> => {
-    const token = getAuthToken();
-    const res = await fetch(`${API_BASE}/profile/id-proof/${role}/${userId}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || 'Failed to load ID proof document.');
-    }
-    const blob = await res.blob();
-    return URL.createObjectURL(blob);
-  },
+  }) =>
+    request<{ message: string; profile: WorkerProfile }>('/profile', {
+      method: 'POST',
+      body: JSON.stringify(profileData),
+    }),
 
   // Agent Profile
   getAgentProfile: () => request<{ profile: AgentProfile }>('/profile/agent'),
@@ -237,10 +189,11 @@ export const api = {
     photos?: string | null;
     whatsappNumber: string;
     originalProofDoc?: string | null;
-  }) => request<{ message: string; profile: AgentProfile }>('/profile/agent', {
-    method: 'POST',
-    body: JSON.stringify(profileData),
-  }),
+  }) =>
+    request<{ message: string; profile: AgentProfile }>('/profile/agent', {
+      method: 'POST',
+      body: JSON.stringify(profileData),
+    }),
 
   // Events
   getOpenEvents: (params?: { location?: string; search?: string }) => {
@@ -257,10 +210,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(eventData),
     }),
-  deleteEvent: (id: string) =>
-    request<{ message: string }>(`/events/${id}`, {
-      method: 'DELETE',
-    }),
+  deleteEvent: (id: string) => request<{ message: string }>(`/events/${id}`, { method: 'DELETE' }),
   updateEventStatus: (id: string, status: 'OPEN' | 'COMPLETED' | 'CANCELLED') =>
     request<{ message: string; event: EventItem }>(`/events/${id}/status`, {
       method: 'PATCH',
@@ -274,56 +224,48 @@ export const api = {
       body: JSON.stringify({ eventId, groupSize, additionalWorkers }),
     }),
   getMyApplications: () => request<{ applications: ApplicationItem[] }>('/applications/my-applications'),
-  updateApplicationStatus: (
-    id: string,
-    status: 'APPROVED' | 'REJECTED' | 'COMPLETED' | 'APPLIED',
-    rating?: number
-  ) =>
+  updateApplicationStatus: (id: string, status: 'APPROVED' | 'REJECTED' | 'COMPLETED' | 'APPLIED', rating?: number) =>
     request<{ message: string; application: ApplicationItem }>(`/applications/${id}/status`, {
       method: 'PATCH',
       body: JSON.stringify({ status, rating }),
     }),
-  cancelApplication: (id: string) =>
-    request<{ message: string }>(`/applications/${id}`, {
-      method: 'DELETE',
-    }),
+  cancelApplication: (id: string) => request<{ message: string }>(`/applications/${id}`, { method: 'DELETE' }),
   confirmPayment: (id: string) =>
-    request<{ message: string; application: ApplicationItem }>(`/applications/${id}/payment-confirm`, {
-      method: 'PATCH',
-    }),
+    request<{ message: string; application: ApplicationItem }>(`/applications/${id}/payment-confirm`, { method: 'PATCH' }),
   markPaid: (id: string, paymentProofKey: string, paymentReference?: string) =>
     request<{ message: string; application: ApplicationItem }>(`/applications/${id}/mark-paid`, {
       method: 'PATCH',
       body: JSON.stringify({ paymentReference, paymentProofKey }),
     }),
+
+  // Complaints
   fileComplaint: (applicationId: string, reason: string) =>
     request<{ message: string; complaint: ComplaintItem }>('/complaints', {
       method: 'POST',
       body: JSON.stringify({ applicationId, reason }),
     }),
-  getMyComplaints: () =>
-    request<{ complaints: ComplaintItem[] }>('/complaints/my-complaints'),
+  getMyComplaints: () => request<{ complaints: ComplaintItem[] }>('/complaints/my-complaints'),
 
   // Admin
-  getAdminComplaints: () =>
-    request<{ complaints: AdminComplaintItem[] }>('/admin/complaints'),
+  getAdminComplaints: () => request<{ complaints: AdminComplaintItem[] }>('/admin/complaints'),
   resolveComplaint: (id: string, status: 'RESOLVED_GENUINE' | 'RESOLVED_INVALID', adminNotes?: string) =>
     request<{ message: string; complaint: AdminComplaintItem }>(`/admin/complaints/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({ status, adminNotes }),
     }),
+
   checkIn: (id: string, checkInPhoto: string, latitude: number, longitude: number) =>
     request<{ message: string; application: ApplicationItem }>(`/applications/${id}/check-in`, {
       method: 'POST',
       body: JSON.stringify({ checkInPhoto, latitude, longitude }),
     }),
+
   checkOut: (id: string, checkOutPhoto: string, latitude: number, longitude: number) =>
     request<{ message: string; application: ApplicationItem }>(`/applications/${id}/check-out`, {
       method: 'POST',
       body: JSON.stringify({ checkOutPhoto, latitude, longitude }),
     }),
-
-  // S3 Presigned URL Upload
+  // S3 Presigned Upload
   getPresignedUrl: (fileType: 'profilePhoto' | 'idProof' | 'checkInPhoto' | 'checkOutPhoto' | 'paymentProof', fileName: string) =>
     request<{ uploadUrl: string; objectKey: string; fileUrl: string; isMock?: boolean }>('/upload/presigned-url', {
       method: 'POST',
@@ -332,12 +274,24 @@ export const api = {
   uploadToPresignedUrl: async (uploadUrl: string, file: File) => {
     const res = await fetch(uploadUrl, {
       method: 'PUT',
-      headers: {
-        'Content-Type': file.type,
-      },
+      headers: { 'Content-Type': file.type },
       body: file,
     });
     if (!res.ok) throw new Error('Failed to upload file.');
     return true;
+  },
+
+  // ID Proof
+  getIdProofBlobUrl: async (role: 'worker' | 'agent', userId: string): Promise<string> => {
+    const token = getAuthToken();
+    const res = await fetch(`${API_BASE}/profile/id-proof/${role}/${userId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Failed to load ID proof document.');
+    }
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
   },
 };

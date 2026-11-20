@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
-import * as admin from 'firebase-admin';
+import { initializeApp, getApps, cert, App, AppOptions } from 'firebase-admin/app';
+import { getAuth, DecodedIdToken } from 'firebase-admin/auth';
 
 dotenv.config();
 
@@ -18,26 +19,58 @@ export interface FirebaseDatabaseStatus {
   statusMessage: string;
 }
 
-let firebaseAdminApp: any = null;
+let firebaseAdminApp: App | null = null;
+
+export function getFirebaseAdminApp(): App {
+  const existingApps = getApps();
+  if (existingApps && existingApps.length > 0 && existingApps[0]) {
+    return existingApps[0];
+  }
+
+  let credential = undefined;
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    try {
+      const raw = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
+      if (raw.startsWith('{')) {
+        credential = cert(JSON.parse(raw));
+      } else {
+        credential = cert(raw);
+      }
+    } catch (err: any) {
+      console.warn(`[FIREBASE DB] Failed to parse FIREBASE_SERVICE_ACCOUNT credential: ${err.message}`);
+    }
+  }
+
+  const options: AppOptions = {
+    projectId: firebaseConfig.projectId,
+    databaseURL: firebaseConfig.databaseURL,
+  };
+
+  if (credential) {
+    options.credential = credential;
+  }
+
+  firebaseAdminApp = initializeApp(options);
+  console.log(`[FIREBASE DB] Firebase Admin SDK initialized for project: ${firebaseConfig.projectId}`);
+  return firebaseAdminApp;
+}
+
+export async function verifyFirebaseIdToken(idToken: string): Promise<DecodedIdToken> {
+  const app = getFirebaseAdminApp();
+  if (!app) {
+    throw new Error('Firebase Admin SDK is not initialized.');
+  }
+  return await getAuth(app).verifyIdToken(idToken);
+}
 
 export function initializeFirebaseDatabase(): FirebaseDatabaseStatus {
   console.log(`[FIREBASE DB] Initializing connection for Project: ${firebaseConfig.projectName} (${firebaseConfig.projectId})`);
   console.log(`[FIREBASE DB] Project Number: ${firebaseConfig.projectNumber}`);
 
-  const apps = (admin as any).apps || (admin as any).default?.apps || [];
-  if (!apps.length) {
-    try {
-      const initialize = admin.initializeApp || (admin as any).default?.initializeApp;
-      if (typeof initialize === 'function') {
-        firebaseAdminApp = initialize({
-          projectId: firebaseConfig.projectId,
-          databaseURL: firebaseConfig.databaseURL,
-        });
-        console.log(`[FIREBASE DB] Firebase Admin SDK initialized for project: ${firebaseConfig.projectId}`);
-      }
-    } catch (err: any) {
-      console.warn(`[FIREBASE DB] Note: Firebase Admin initialization: ${err.message}`);
-    }
+  try {
+    getFirebaseAdminApp();
+  } catch (err: any) {
+    console.warn(`[FIREBASE DB] Note: Firebase Admin initialization: ${err.message}`);
   }
 
   const status: FirebaseDatabaseStatus = {
