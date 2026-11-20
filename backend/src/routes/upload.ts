@@ -11,39 +11,51 @@ const router = Router();
 // (e.g. by an agent reviewing a worker's profile photo or check-in/out photos).
 export const STORAGE_ROOT = path.join(process.cwd(), 'storage');
 
+// Single source of truth for the region used by the client, the presigner, the
+// file URL and the fail-closed validation below.
+const S3_REGION = process.env.AWS_REGION || 'us-east-1';
+const VALID_REGIONS = ['ap-south-1']; // Only ap-south-1 (Mumbai) is valid for the gigcater bucket
+
 const s3Client = new S3Client({
-  region: process.env.AWS_REGION || 'us-east-1',
+  region: S3_REGION,
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'mock_access_key',
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'mock_secret_key',
   },
+  // SDK >= 3.729 signs the CRC32 of an EMPTY body (AAAAAA==) into presigned PUT
+  // URLs by default. Browsers PUT the real file but cannot satisfy that signed
+  // checksum, so S3 rejects the upload. Only calculate checksums when the
+  // operation actually requires one.
+  requestChecksumCalculation: 'WHEN_REQUIRED',
+  responseChecksumValidation: 'WHEN_REQUIRED',
 });
 
-// Diagnostics: effective S3 client region, URL hostname and signing scope (never logs credentials or full URLs)
-function getS3Diagnostics(): { region: string; hostname: string; signingRegion: string; warning?: string } {
-  const envRegion = process.env.AWS_REGION;
-  // The effective region used by the S3 client and URL constructor
-  const region = envRegion || 'us-east-1';
-  // The hostname embedded in presigned URLs (same logic as upload.ts line 53)
+// Diagnostics: reads the ACTUAL resolved region from the S3 client configuration
+// (not just process.env), plus the URL hostname/signing scope. Never logs credentials or full URLs.
+async function getS3Diagnostics(): Promise<{ region: string; hostname: string; signingRegion: string; warning?: string }> {
+  // Resolve the region the client will actually sign with (config.region is a provider)
+  const region = await s3Client.config.region();
+  // The hostname embedded in presigned URLs
   const hostname = `s3.${region}.amazonaws.com`;
-  // The signing region embedded in the X-Amz-Credential scope (same logic as PutObjectCommand)
-  const signingRegion = region; // SDK derives signing region from the client region
+  // The signing region embedded in the X-Amz-Credential scope
+  const signingRegion = region;
   let warning: string | undefined;
-  // Fail-closed: if the effective region produces an obviously invalid hostname
-  if (hostname.includes('ap-south-db') || region === 'ap-south-db') {
-    warning = `⚠ S3 effective region '${region}' produces invalid hostname s3.ap-south-db.amazonaws.com. Expected region for gigcater bucket in ap-south-1 (Mumbai). Render dashboard shows ap-south-1 but effective region is '${envRegion || '(not set)'}'.`;
+  if (!VALID_REGIONS.includes(region) || hostname.includes('ap-south-db')) {
+    warning = `⚠ S3 client resolved region '${region}' is not the verified gigcater bucket region 'ap-south-1'. Expected hostname s3.ap-south-1.amazonaws.com.`;
   }
   return { region, hostname, signingRegion, warning };
 }
 
 // Log diagnostics on module load (safe - no secrets exposed)
-const bucketName = process.env.AWS_S3_BUCKET || 'gigcater-uploads';
-const diag = getS3Diagnostics();
-if (diag.warning) {
-  console.warn(diag.warning);
-} else {
-  console.log(`✓ S3 diagnostics: region=${diag.region}, hostname=${diag.hostname}, signingRegion=${diag.signingRegion}`);
-}
+void getS3Diagnostics()
+  .then((diag) => {
+    if (diag.warning) console.warn(diag.warning);
+    else console.log(`✓ S3 diagnostics: region=${diag.region}, hostname=${diag.hostname}, signingRegion=${diag.signingRegion}`);
+  })
+  .catch((err) => console.error('S3 diagnostics failed:', err instanceof Error ? err.message : err));
+
+// Exposed for tests/diagnostics only — does not contain secrets.
+export { s3Client, getS3Diagnostics };
 
 // POST /api/upload/presigned-url - Generate pre-signed URL for uploading files
 // (Worker profile photo/ID proof/attendance photos, or Agent profile photo/ID proof/payment proof)
@@ -56,18 +68,14 @@ router.post('/presigned-url', authenticate, requireRole(['WORKER', 'AGENT']), as
     }
 
     // --- Region validation: reject if effective region does not match the verified gigcater bucket region ---
-    const effectiveRegion = process.env.AWS_REGION || 'us-east-1';
-    const VALID_REGIONS = ['ap-south-1']; // Only ap-south-1 (Mumbai) is valid for the gigcater bucket
+    // Resolve the region from the actual client so validation and signing can never diverge.
+    const effectiveRegion = await s3Client.config.region();
     if (!VALID_REGIONS.includes(effectiveRegion)) {
       return res.status(400).json({
         error: `S3 region configuration error: effective region '${effectiveRegion}' does not match the verified gigcater bucket region 'ap-south-1'. Set AWS_REGION=ap-south-1 in the production environment.`,
       });
     }
     // ---------------------------------------------------
-
-    if (!fileName) {
-      return res.status(400).json({ error: 'fileName is required.' });
-    }
 
     // ID proof documents are sensitive — store them under a "private" prefix that the
     // public /media static route refuses to serve (see index.ts). Everything else
@@ -90,7 +98,7 @@ router.post('/presigned-url', authenticate, requireRole(['WORKER', 'AGENT']), as
       return res.json({
         uploadUrl,
         objectKey,
-        fileUrl: `https://${bucketName}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${objectKey}`,
+        fileUrl: `https://${bucketName}.s3.${S3_REGION}.amazonaws.com/${objectKey}`,
       });
     }
 

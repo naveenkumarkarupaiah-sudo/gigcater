@@ -97,4 +97,48 @@ console.log('=== S3 Presigned URL Regression Tests ===\n');
 // Cleanup
 delete process.env.AWS_REGION;
 
-console.log('\n=== All regression tests passed ===');
+// ---------------------------------------------------------------------------
+// Tests 6 & 7: real presign with the SDK (offline, dummy credentials).
+// Guards the SDK >= 3.729 default-checksum regression that broke browser PUTs
+// with 403: the URL must NOT carry a signed CRC32 of an empty body.
+// ---------------------------------------------------------------------------
+(async () => {
+  const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+  const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+
+  // Must mirror the S3Client config in upload.ts
+  const s3 = new S3Client({
+    region: 'ap-south-1',
+    credentials: { accessKeyId: 'AKIAIOSFODNN7EXAMPLE', secretAccessKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY' },
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
+  });
+
+  const url = await getSignedUrl(
+    s3,
+    new PutObjectCommand({
+      Bucket: 'gigcater-uploads',
+      Key: 'uploads/user_1/profilePhoto_1234567890_test.jpg',
+      ContentType: 'application/octet-stream',
+    }),
+    { expiresIn: 3600 }
+  );
+  const parsed = new URL(url);
+
+  // Test 6: no signed empty-body checksum params that a browser cannot satisfy
+  if (parsed.searchParams.has('x-amz-checksum-crc32') || parsed.searchParams.has('x-amz-sdk-checksum-algorithm')) {
+    console.error('✗ Test 6 FAILED: presigned URL contains signed checksum params (browser PUT will fail):',
+      [...parsed.searchParams.keys()].filter((k) => k.startsWith('x-amz-checksum') || k.startsWith('x-amz-sdk-checksum')).join(', '));
+    process.exit(1);
+  }
+  console.log('✓ Test 6 passed: presigned URL has no empty-body checksum params');
+
+  // Test 7: region/host remain correct after the checksum change
+  if (parsed.host !== 'gigcater-uploads.s3.ap-south-1.amazonaws.com') {
+    console.error(`✗ Test 7 FAILED: unexpected host ${parsed.host}`);
+    process.exit(1);
+  }
+  console.log('✓ Test 7 passed: presigned URL host is s3.ap-south-1.amazonaws.com');
+
+  console.log('\n=== All regression tests passed ===');
+})();
