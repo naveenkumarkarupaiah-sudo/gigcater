@@ -277,7 +277,20 @@ export const api = {
       headers: { 'Content-Type': file.type },
       body: file,
     });
-    if (!res.ok) throw new Error('Failed to upload file.');
+    if (!res.ok) {
+      // S3 returns a small XML <Error> document with the real reason (e.g. AccessDenied,
+      // SignatureDoesNotMatch, InvalidAccessKeyId). Surface its code/message so upload
+      // failures are diagnosable instead of a generic message. The upload URL itself is
+      // never included — it is a live capability.
+      const body = await res.text().catch(() => '');
+      const code = (body.match(/<Code>(.*?)<\/Code>/) || [])[1];
+      const message = (body.match(/<Message>(.*?)<\/Message>/) || [])[1];
+      throw new Error(
+        code
+          ? `Failed to upload file (HTTP ${res.status}, ${code}: ${message || 'no message returned'}).`
+          : `Failed to upload file (HTTP ${res.status}).`
+      );
+    }
     return true;
   },
 

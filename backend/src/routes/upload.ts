@@ -119,6 +119,60 @@ router.post('/presigned-url', authenticate, requireRole(['WORKER', 'AGENT']), as
   }
 });
 
+// GET /api/upload/diagnostics - ADMIN only, read-only S3 self-check.
+// Answers "why does the browser PUT fail?" using the SERVER's real credentials: it presigns a
+// PUT the same way the browser flow does, performs it against a single fixed probe key, and
+// reports only the S3 status/error code/message/request id. It never returns the presigned URL
+// (which would be a live upload capability), the secret key, or any user file. The probe
+// overwrites the same key every run, so it cannot accumulate objects.
+router.get('/diagnostics', authenticate, requireRole(['ADMIN']), async (_req: AuthRequest, res: Response) => {
+  if (!process.env.AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID === 'mock_access_key') {
+    return res.status(400).json({ error: 'S3 is not configured in this environment (mock credentials).' });
+  }
+
+  const bucket = process.env.AWS_S3_BUCKET || 'gigcater-uploads';
+  const region = await s3Client.config.region();
+  const objectKey = 'diagnostics/healthcheck.txt';
+  const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+
+  try {
+    const uploadUrl = await getSignedUrl(
+      s3Client,
+      new PutObjectCommand({ Bucket: bucket, Key: objectKey, ContentType: 'text/plain' }),
+      { expiresIn: 300 }
+    );
+    // Only non-sensitive parts of the URL are reported.
+    const signedHeaders = new URL(uploadUrl).searchParams.get('X-Amz-SignedHeaders');
+
+    const putRes = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/plain' },
+      body: 'gigcater-s3-healthcheck',
+    });
+    const xml = await putRes.text();
+    const pick = (tag: string) => (xml.match(new RegExp(`<${tag}>(.*?)</${tag}>`)) || [])[1];
+
+    return res.json({
+      ok: putRes.ok,
+      status: putRes.status,
+      bucket,
+      region,
+      host: `${bucket}.s3.${region}.amazonaws.com`,
+      signedHeaders,
+      // Distinguishes "wrong key" (InvalidAccessKeyId) from "key lacks permission" (AccessDenied)
+      // without revealing the key itself.
+      accessKeyHint: accessKeyId ? `${accessKeyId.slice(0, 4)}...${accessKeyId.slice(-4)}` : undefined,
+      objectKey,
+      errorCode: pick('Code'),
+      errorMessage: pick('Message'),
+      requestId: pick('RequestId'),
+    });
+  } catch (error) {
+    console.error('S3 diagnostics probe failed:', error instanceof Error ? error.message : error);
+    return res.status(500).json({ error: 'S3 diagnostics probe failed to run.' });
+  }
+});
+
 // ❌ MOCK S3 UPLOAD DISABLED IN PRODUCTION
 // This endpoint is only available in development mode and requires authentication + validation.
 // In production (NODE_ENV === 'production'), any request to /mock-s3-upload returns 403 Forbidden.
