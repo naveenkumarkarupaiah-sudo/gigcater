@@ -41,6 +41,7 @@ app.get('/api/health', (req, res) => {
 
 // Routes
 app.use('/api/auth', authRoutes);
+// Also mount without /api prefix for compatibility with frontend env config\napp.use('/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/applications', applicationRoutes);

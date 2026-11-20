@@ -19,11 +19,51 @@ const s3Client = new S3Client({
   },
 });
 
+// Diagnostics: effective S3 client region, URL hostname and signing scope (never logs credentials or full URLs)
+function getS3Diagnostics(): { region: string; hostname: string; signingRegion: string; warning?: string } {
+  const envRegion = process.env.AWS_REGION;
+  // The effective region used by the S3 client and URL constructor
+  const region = envRegion || 'us-east-1';
+  // The hostname embedded in presigned URLs (same logic as upload.ts line 53)
+  const hostname = `s3.${region}.amazonaws.com`;
+  // The signing region embedded in the X-Amz-Credential scope (same logic as PutObjectCommand)
+  const signingRegion = region; // SDK derives signing region from the client region
+  let warning: string | undefined;
+  // Fail-closed: if the effective region produces an obviously invalid hostname
+  if (hostname.includes('ap-south-db') || region === 'ap-south-db') {
+    warning = `⚠ S3 effective region '${region}' produces invalid hostname s3.ap-south-db.amazonaws.com. Expected region for gigcater bucket in ap-south-1 (Mumbai). Render dashboard shows ap-south-1 but effective region is '${envRegion || '(not set)'}'.`;
+  }
+  return { region, hostname, signingRegion, warning };
+}
+
+// Log diagnostics on module load (safe - no secrets exposed)
+const bucketName = process.env.AWS_S3_BUCKET || 'gigcater-uploads';
+const diag = getS3Diagnostics();
+if (diag.warning) {
+  console.warn(diag.warning);
+} else {
+  console.log(`✓ S3 diagnostics: region=${diag.region}, hostname=${diag.hostname}, signingRegion=${diag.signingRegion}`);
+}
+
 // POST /api/upload/presigned-url - Generate pre-signed URL for uploading files
 // (Worker profile photo/ID proof/attendance photos, or Agent profile photo/ID proof/payment proof)
 router.post('/presigned-url', authenticate, requireRole(['WORKER', 'AGENT']), async (req: AuthRequest, res: Response) => {
   try {
     const { fileType, fileName } = req.body; // e.g. 'profilePhoto', 'idProof', 'checkInPhoto', 'checkOutPhoto', 'paymentProof'
+
+    if (!fileName) {
+      return res.status(400).json({ error: 'fileName is required.' });
+    }
+
+    // --- Region validation: reject if effective region does not match the verified gigcater bucket region ---
+    const effectiveRegion = process.env.AWS_REGION || 'us-east-1';
+    const VALID_REGIONS = ['ap-south-1']; // Only ap-south-1 (Mumbai) is valid for the gigcater bucket
+    if (!VALID_REGIONS.includes(effectiveRegion)) {
+      return res.status(400).json({
+        error: `S3 region configuration error: effective region '${effectiveRegion}' does not match the verified gigcater bucket region 'ap-south-1'. Set AWS_REGION=ap-south-1 in the production environment.`,
+      });
+    }
+    // ---------------------------------------------------
 
     if (!fileName) {
       return res.status(400).json({ error: 'fileName is required.' });
